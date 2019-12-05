@@ -37,13 +37,13 @@ static OP_EQUALS: i64 = 8;
 static POSITION_MODE: i64 = 0;
 static IMMEDIATE_MODE: i64 = 1;
 
-fn get_parameter_modes(mut instruction: i64) -> Vec<i64> {
-    instruction = (instruction - get_opcode(instruction)) / 100;
-    let mut parameter_modes = vec![];
+fn get_parameter_modes(parameterized_op: i64) -> Vec<i64> {
+    let mut parameters = (parameterized_op - get_opcode(parameterized_op)) / 100;
+    let mut parameter_modes = Vec::with_capacity(10);
 
-    while instruction > 0 {
-        parameter_modes.push(instruction % 10);
-        instruction = instruction / 10;
+    while parameters > 0 {
+        parameter_modes.push(parameters % 10);
+        parameters = parameters / 10;
     }
 
     // Append extra zeroes to be safe
@@ -54,8 +54,8 @@ fn get_parameter_modes(mut instruction: i64) -> Vec<i64> {
     parameter_modes
 }
 
-fn get_opcode(instruction: i64) -> i64 {
-    instruction % 100
+fn get_opcode(parameterized_op: i64) -> i64 {
+    parameterized_op % 100
 }
 
 fn get_parameter(parameter_mode: i64, argument: i64, program: &Vec<i64>) -> i64 {
@@ -72,10 +72,10 @@ pub fn run_intcode_cpu(mut input: Vec<i64>, mut program: Vec<i64>, print_output:
     let mut ip = 0;
     let mut output = vec![];
     while ip < program.len() {
-        let instruction = program[ip];
+        let parameterized_op = program[ip];
 
-        let parameter_modes = get_parameter_modes(instruction);
-        let opcode = get_opcode(instruction);
+        let parameter_modes = get_parameter_modes(parameterized_op);
+        let opcode = get_opcode(parameterized_op);
 
         if opcode == OP_HALT {
             break;
