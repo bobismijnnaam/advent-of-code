@@ -1,9 +1,36 @@
 #![allow(dead_code)]
 
-pub type Vec2 = (i64, i64);
+use std::fs;
+use std::ops;
 
-pub fn add(a: Vec2, b: Vec2) -> Vec2 {
-    (a.0 + b.0, a.1 + b.1)
+pub struct Vec2(pub i64, pub i64);
+
+impl Vec2 {
+    pub fn add(&self, b: Vec2) -> Vec2 {
+        Vec2(a.0 + b.0, a.1 + b.1)
+    }
+}
+
+impl ops::Add<Vec2> for Vec2 {
+    type Output = Vec2;
+
+    fn add(self, rhs: Vec2) -> Vec2  {
+        self.add(rhs);
+    }
+}
+
+#[cfg(test)]
+mod vec2_tests {
+    use super::*;
+
+    /////////////////
+    // Day 2 tests //
+    /////////////////
+
+    #[test]
+    fn test_add() {
+        assert_eq!((0, 0) + (1, 1), (1, 1))
+    }
 }
 
 pub fn manhattan(a: Vec2, b: Vec2) -> i64 {
@@ -137,3 +164,143 @@ pub fn run_intcode_cpu(mut input: Vec<i64>, mut program: Vec<i64>, print_output:
     Some((output, program))
 }
 
+pub fn program_from_file(filename: &str) -> Vec<i64> {
+    fs::read_to_string(filename).unwrap().split(",").map(|num_str| num_str.trim().parse().unwrap()).collect()
+}
+
+#[cfg(test)]
+mod intcode_tests {
+   use super::*;
+
+    /////////////////
+    // Day 2 tests //
+    /////////////////
+
+    #[test]
+    fn test_add_1() {
+        let program = vec![1,9,10,3,2,3,11,0,99,30,40,50];
+        let (_, program) = run_intcode_cpu(vec![], program, false).unwrap();
+        assert_eq!(program[0], 3500);
+    }
+
+    #[test]
+    fn test_add_2() {
+        let program = vec![1,0,0,0,99];
+        let (_, program) = run_intcode_cpu(vec![], program, false).unwrap();
+        assert_eq!(program[0], 2);
+    }
+
+    #[test]
+    fn test_add_3() {
+        let program = vec![2,3,0,3,99];
+        let (_, program) = run_intcode_cpu(vec![], program, false).unwrap();
+        assert_eq!(program[3], 6);
+    }
+
+    #[test]
+    fn test_add_4() {
+        let program = vec![2,4,4,5,99,0];
+        let (_, program) = run_intcode_cpu(vec![], program, false).unwrap();
+        assert_eq!(program[5], 9801);
+    }
+
+    #[test]
+    fn test_add_5() {
+        let program = vec![1,1,1,4,99,5,6,0,99];
+        let (_, program) = run_intcode_cpu(vec![], program, false).unwrap();
+        assert_eq!(program[0], 30);
+        assert_eq!(program[4], 2);
+    }
+
+    /////////////////
+    // Day 5 tests //
+    /////////////////
+
+    #[test]
+    fn test_parameter_modes() {
+        let program = vec![1002,4,3,4,33];
+        let (_, program) = run_intcode_cpu(vec![], program, false).unwrap();
+        assert_eq!(program[4], 99);
+
+        let program = vec![1101,100,-1,4,0];
+        let (_, program) = run_intcode_cpu(vec![], program, false).unwrap();
+        assert_eq!(program[4], 99);
+    }
+
+    #[test]
+    fn test_branches() {
+        let program = vec![3,9,8,9,10,9,4,9,99,-1,8]; // Using position mode, consider whether the input is equal to 8; output 1 (if it is) or 0 (if it is not).
+        let (output, _) = run_intcode_cpu(vec![8], program.clone(), false).unwrap();
+        assert_eq!(output[0], 1);
+        let (output, _) = run_intcode_cpu(vec![7], program, false).unwrap();
+        assert_eq!(output[0], 0);
+
+        let program = vec![3,9,7,9,10,9,4,9,99,-1,8]; // Using position mode, consider whether the input is less than 8; output 1 (if it is) or 0 (if it is not).
+        let (output, _) = run_intcode_cpu(vec![8], program.clone(), false).unwrap();
+        assert_eq!(output[0], 0);
+        let (output, _) = run_intcode_cpu(vec![7], program.clone(), false).unwrap();
+        assert_eq!(output[0], 1);
+        let (output, _) = run_intcode_cpu(vec![9], program, false).unwrap();
+        assert_eq!(output[0], 0);
+
+        let program = vec![3,3,1108,-1,8,3,4,3,99]; // Using immediate mode, consider whether the input is equal to 8; output 1 (if it is) or 0 (if it is not).
+        let (output, _) = run_intcode_cpu(vec![8], program.clone(), false).unwrap();
+        assert_eq!(output[0], 1);
+        let (output, _) = run_intcode_cpu(vec![7], program, false).unwrap();
+        assert_eq!(output[0], 0);
+
+        let program = vec![3,3,1107,-1,8,3,4,3,99]; // Using immediate mode, consider whether the input is less than 8; output 1 (if it is) or 0 (if it is not).
+        let (output, _) = run_intcode_cpu(vec![8], program.clone(), false).unwrap();
+        assert_eq!(output[0], 0);
+        let (output, _) = run_intcode_cpu(vec![7], program.clone(), false).unwrap();
+        assert_eq!(output[0], 1);
+        let (output, _) = run_intcode_cpu(vec![9], program, false).unwrap();
+        assert_eq!(output[0], 0);
+
+        // Here are some jump tests that take an input, then output 0 if the input was zero or 1 if the input was non-zero:
+        let program = vec![3,12,6,12,15,1,13,14,13,4,13,99,-1,0,1,9]; // (using position mode)
+        let (output, _) = run_intcode_cpu(vec![8], program.clone(), false).unwrap();
+        assert_eq!(output[0], 1);
+        let (output, _) = run_intcode_cpu(vec![1], program.clone(), false).unwrap();
+        assert_eq!(output[0], 1);
+        let (output, _) = run_intcode_cpu(vec![0], program, false).unwrap();
+        assert_eq!(output[0], 0);
+
+        let program = vec![3,3,1105,-1,9,1101,0,0,12,4,12,99,1]; // (using immediate mode)
+        let (output, _) = run_intcode_cpu(vec![8], program.clone(), false).unwrap();
+        assert_eq!(output[0], 1);
+        let (output, _) = run_intcode_cpu(vec![1], program.clone(), false).unwrap();
+        assert_eq!(output[0], 1);
+        let (output, _) = run_intcode_cpu(vec![0], program, false).unwrap();
+        assert_eq!(output[0], 0);
+
+        let program = vec![3,21,1008,21,8,20,1005,20,22,107,8,21,20,1006,20,31,1106,0,36,98,0,0,1002,21,125,20,4,20,1105,1,46,104,999,1105,1,46,1101,1000,1,20,4,20,1105,1,46,98,99];
+        let (output, _) = run_intcode_cpu(vec![7], program.clone(), false).unwrap();
+        assert_eq!(output[0], 999);
+        let (output, _) = run_intcode_cpu(vec![8], program.clone(), false).unwrap();
+        assert_eq!(output[0], 1000);
+        let (output, _) = run_intcode_cpu(vec![9], program, false).unwrap();
+        assert_eq!(output[0], 1001);
+    }
+
+    #[test]
+    fn test_day5_input() {
+        // Part 1
+        let (output, _) = run_intcode_cpu(
+            vec![1],
+            program_from_file("src/inputs/day5_input.txt"),
+            true)
+                .unwrap();
+
+        assert_eq!(output, vec![0, 0, 0, 0, 0, 0, 0, 0, 0, 9654885]);
+
+        // part 2
+        let (output, _) = run_intcode_cpu(
+            vec![5],
+            program_from_file("src/inputs/day5_input.txt"),
+            true)
+            .unwrap();
+
+        assert_eq!(output, vec![7079459])
+    }
+}
