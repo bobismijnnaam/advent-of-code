@@ -1,11 +1,6 @@
 use std::fs;
 use std::collections::HashMap;
 
-// TODO: Only get_memory and set_memory, no u variants! All usize
-// TODO: Add tests day 9
-// TODO: get_input_param instead of calc_address
-// TODO: Also get_output_param
-
 static OP_HALT: i64 = 99;
 
 // 3 params

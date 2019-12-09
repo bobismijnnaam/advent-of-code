@@ -14,7 +14,7 @@ fn main1() {
 }
 
 fn main() {
-    main1();
+//    main1();
 
     let mut cpu = IntcodeCPU::new(program_from_file("input.txt"));
     cpu.input.push(2);
