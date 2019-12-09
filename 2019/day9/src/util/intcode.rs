@@ -1,6 +1,8 @@
 use std::fs;
 use std::collections::HashMap;
 
+// TODO: Add other day9 tests
+
 static OP_HALT: i64 = 99;
 
 // 3 params
