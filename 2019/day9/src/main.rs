@@ -1,6 +1,5 @@
 mod util;
 
-extern crate itertools;
 use util::intcode::*;
 
 fn main1() {
