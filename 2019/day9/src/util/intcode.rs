@@ -29,6 +29,119 @@ static POSITION_MODE: i64 = 0;
 static IMMEDIATE_MODE: i64 = 1;
 static RELATIVE_MODE: i64 = 2;
 
+#[derive(Debug, Ord, PartialOrd, Eq, PartialEq, Copy, Clone)]
+pub enum Pointer {
+    Absolute(i64),
+    Relative(i64)
+}
+
+#[derive(Debug, Ord, PartialOrd, Eq, PartialEq, Copy, Clone)]
+pub enum Param {
+    Immediate(i64),
+    Indirect(Pointer),
+}
+
+#[derive(Debug, Ord, PartialOrd, Eq, PartialEq, Copy, Clone)]
+pub enum Instruction {
+    Halt,
+
+    Add(Param, Param, Pointer),
+    Mul(Param, Param, Pointer),
+
+    Input(Pointer),
+    Output(Param),
+    AdjustBase(Param),
+
+    JumpIfTrue(Param, Param),
+    JumpIfFalse(Param, Param),
+
+    LessThan(Param, Param, Pointer),
+    Equals(Param, Param, Pointer)
+}
+
+fn decode_pointer(parameter_mode: i64, value: i64) -> Pointer {
+    if parameter_mode == POSITION_MODE {
+        Pointer::Absolute(value)
+    } else if parameter_mode == RELATIVE_MODE {
+        Pointer::Relative(value)
+    } else {
+        panic!();
+    }
+}
+
+fn decode_param(parameter_mode: i64, value: i64) -> Param {
+    if parameter_mode == POSITION_MODE || parameter_mode == RELATIVE_MODE {
+        Param::Indirect(decode_pointer(parameter_mode, value))
+    } else if parameter_mode == IMMEDIATE_MODE {
+        Param::Immediate(value)
+    } else {
+        panic!();
+    }
+}
+
+fn decode(ip: usize, program: &[i64]) -> Option<(Instruction, usize)> {
+    assert!(program.len() > 0);
+
+    let parameterized_op = program[0];
+
+    let parameter_modes = get_parameter_modes(parameterized_op);
+    let opcode = get_opcode(parameterized_op);
+
+    if opcode == OP_HALT {
+        Some((Instruction::Halt, ip + 1))
+    } else if opcode == OP_ADD || opcode == OP_MUL || opcode == OP_LESS_THAN || opcode == OP_EQUALS {
+        let param1 = decode_param(parameter_modes[0], program[1]);
+        let param2 = decode_param(parameter_modes[1], program[2]);
+        let pointer = decode_pointer(parameter_modes[2], program[3]);
+
+        let instruction = if opcode == OP_ADD {
+            Instruction::Add(param1, param2, pointer)
+        } else if opcode == OP_MUL {
+            Instruction::Mul(param1, param2, pointer)
+        } else if opcode == OP_LESS_THAN {
+            Instruction::LessThan(param1, param2, pointer)
+        } else if opcode == OP_EQUALS {
+            Instruction::Equals(param1, param2, pointer)
+        } else {
+            panic!("Unexpected opcode {}", opcode);
+        };
+
+        Some((instruction, ip + 4))
+    } else if opcode == OP_INPUT {
+        Some((
+            Instruction::Input(decode_pointer(parameter_modes[0], program[1])),
+            ip + 2
+        ))
+    } else if opcode == OP_OUTPUT {
+        Some((
+            Instruction::Output(decode_param(parameter_modes[0], program[1])),
+            ip + 2
+        ))
+    } else if opcode == OP_JUMP_IF_TRUE || opcode == OP_JUMP_IF_FALSE {
+        let test_param = decode_param(parameter_modes[0], program[1]);
+        let target_param = decode_param(parameter_modes[1], program[2]);
+        let instr = if opcode == OP_JUMP_IF_TRUE  {
+            Instruction::JumpIfTrue(test_param, target_param)
+        } else if opcode == OP_JUMP_IF_FALSE {
+            Instruction::JumpIfFalse(test_param, target_param)
+        } else {
+            panic!("Unexpected opcode {}", opcode)
+        };
+        Some((
+            instr,
+            ip + 3
+        ))
+    } else if opcode == OP_ADJUST_RELATIVE_BASE {
+        let param = decode_param(parameter_modes[0], program[1]);
+        Some((
+            Instruction::AdjustBase(param),
+            ip + 2
+        ))
+    } else {
+        panic!("Unknown opcode {}", opcode);
+    }
+}
+
 fn get_parameter_modes(parameterized_op: i64) -> Vec<i64> {
     let mut parameters = (parameterized_op - get_opcode(parameterized_op)) / 100;
     let mut parameter_modes = Vec::with_capacity(10);
@@ -84,9 +197,105 @@ impl IntcodeCPU {
         }
     }
 
-    fn cycle(&mut self) {
-        self.state = IntcodeState::Running;
+    fn next_4_ints(&self) -> [i64; 4] {
+        let mut ints = [0; 4];
+        for i in 0..4 {
+            ints[i] = self.get_umemory(self.ip + i);
+        }
+        ints
+    }
 
+    fn resolve_param(&self, param: Param) -> i64 {
+        match param {
+            Param::Indirect(ptr) => self.dereference_pointer(ptr),
+            Param::Immediate(val) => val
+        }
+    }
+
+    fn dereference_pointer(&self, ptr: Pointer) -> i64 {
+        match ptr {
+            Pointer::Relative(offset) => self.get_memory(self.rbp as i64 + offset),
+            Pointer::Absolute(raw_ptr) => self.get_memory(raw_ptr)
+        }
+    }
+
+    fn write_to_pointer(&mut self, p: Pointer, val: i64) {
+        match p {
+            Pointer::Relative(offset) => self.set_memory(self.rbp as i64 + offset, val),
+            Pointer::Absolute(raw_ptr) => self.set_memory(raw_ptr, val)
+        }
+    }
+
+    fn cycle2(&mut self) {
+//        println!("-----");
+        let (instr, mut next_ip) = decode(self.ip, &self.next_4_ints()).unwrap();
+
+//        dbg!(self.ip);
+//        dbg!(instr);
+
+        use Instruction::*;
+
+        match instr {
+            Halt => {
+                self.state = IntcodeState::Halt;
+            },
+
+            Add(a, b, dest) => {
+                self.write_to_pointer(dest, self.resolve_param(a) + self.resolve_param(b));
+            },
+            Mul(a, b, dest) => {
+                self.write_to_pointer(dest, self.resolve_param(a) * self.resolve_param(b));
+            }
+            LessThan(a, b, dest) => {
+                self.write_to_pointer(dest, if self.resolve_param(a) < self.resolve_param(b) { 1 }  else { 0 });
+            }
+            Equals(a, b, dest) => {
+                self.write_to_pointer(dest, if self.resolve_param(a) == self.resolve_param(b) { 1 }  else { 0 });
+            }
+
+            Input(dest) => {
+                if self.input.len() > 0 {
+                    let value = self.input.remove(0);
+                    self.write_to_pointer(dest, value);
+                } else {
+                    self.state = IntcodeState::WaitingForInput;
+                }
+            },
+
+            Output(param) => {
+                let value = self.resolve_param(param);
+                if self.print_output {
+                    println!("{}", value)
+                }
+                self.output.push(value);
+            },
+
+            AdjustBase(param) => {
+                let value = self.resolve_param(param);
+                self.rbp = (self.rbp as i64 + value) as usize;
+            },
+
+            JumpIfTrue(test_param, target_param) => {
+                let test_value = self.resolve_param(test_param);
+                let target_value = self.resolve_param(target_param);
+                if test_value > 0 {
+                    next_ip = target_value as usize;
+                }
+            },
+            JumpIfFalse(test_param, target_param) => {
+                let test_value = self.resolve_param(test_param);
+                let target_value = self.resolve_param(target_param);
+                if test_value == 0 {
+                    next_ip = target_value as usize;
+                }
+            },
+        }
+
+        // Finished:
+        self.ip = next_ip;
+    }
+
+    fn cycle(&mut self) {
         let parameterized_op = self.get_memory(self.ip as i64);
 
         let parameter_modes = get_parameter_modes(parameterized_op);
@@ -162,7 +371,7 @@ impl IntcodeCPU {
     pub fn start(&mut self) {
         assert_eq!(self.state, IntcodeState::Running);
         while self.state == IntcodeState::Running {
-            self.cycle();
+            self.cycle2();
         }
     }
 
