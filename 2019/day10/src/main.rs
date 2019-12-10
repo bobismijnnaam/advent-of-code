@@ -1,5 +1,7 @@
 #![feature(vec_remove_item)]
 
+// TODO: Optimize cartesian products to plain maps in get_visible_asteroids?
+
 mod util;
 use util::vec2::*;
 use util::gcd;
@@ -15,14 +17,14 @@ fn get_visible_asteroids(pos: Vec2, space: &Vec<Vec2>, w: i64, h: i64) -> Vec<Ve
     (1..max_side)
         .map(|side_dist| {
             let t = pos.1 - side_dist;
-            let r = pos.0 + side_dist + 1;
-            let b = pos.1 + side_dist + 1;
+            let r = pos.0 + side_dist;
+            let b = pos.1 + side_dist;
             let l = pos.0 - side_dist;
 
-            let top_row = (l..r).cartesian_product(t..t+1).map(|(x, y)| Vec2(x, y));
-            let right_row = (r-1..r).cartesian_product(t+1..b-1).map(|(x, y)| Vec2(x, y));
-            let bottom_row = (l..r).cartesian_product(b-1..b).map(|(x, y)| Vec2(x, y));
-            let left_row = (l..l+1).cartesian_product(t+1..b-1).map(|(x, y)| Vec2(x, y));
+            let top_row = (l..r + 1).map(move |x| Vec2(x, t));
+            let right_row = (t + 1..b).map(move |y| Vec2(r, y));
+            let bottom_row = (l..r + 1).map(move |x| Vec2(x, b));
+            let left_row = (t + 1..b).map(move |y| Vec2(l, y));
 
             top_row.chain(bottom_row).chain(left_row).chain(right_row)
         })
@@ -50,23 +52,6 @@ fn get_visible_asteroids(pos: Vec2, space: &Vec<Vec2>, w: i64, h: i64) -> Vec<Ve
         .collect()
 }
 
-fn count_visible_asteroids(pos: Vec2, space: &Vec<Vec2>, w: i64, h: i64) -> (Vec2, i64) {
-    let visible_asteroids = get_visible_asteroids(pos, space, w, h);
-
-    return (pos, visible_asteroids.len() as i64);
-}
-
-fn angle(a: Vec2, b: Vec2) -> f64 {
-    let dot = a.0 * b.0 + a.1 * b.1;
-    let det = a.0 * b.1 - a.1 * b.0;
-    let angle = (det as f64).atan2(dot as f64);
-    if angle < 0f64 {
-        2f64 * std::f64::consts::PI + angle
-    } else {
-        angle
-    }
-}
-
 fn main() {
 //    let input = std::fs::read_to_string("test_input1.txt").unwrap();
     let input = std::fs::read_to_string("input.txt").unwrap();
@@ -77,10 +62,9 @@ fn main() {
         row.chars()
             .enumerate()
             .filter_map(move |(x, position)| {
-                if position == '#' {
-                    Some(Vec2(x as i64, y as i64))
-                } else {
-                    None
+                match position {
+                    '#' => Some(Vec2(x as i64, y as i64)),
+                    _ => None
                 }
             })
     }).flatten().collect();
@@ -89,14 +73,14 @@ fn main() {
     let w = *asteroids.iter().map(|Vec2(x, _)| x).max().unwrap() + 1;
 
     let (best_pos, vision_score) = asteroids.iter()
-        .map(|pos| count_visible_asteroids(*pos, &asteroids, w, h))
+        .map(|pos| (*pos, get_visible_asteroids(*pos, &asteroids, w, h).len()))
         .max_by_key(|(pos, count)| *count).unwrap();
 
     dbg!(best_pos);
     dbg!(vision_score);
 
     let calc_angle = |pos: &Vec2| {
-        angle(Vec2(0, -1), *pos - best_pos)
+        Vec2(0, -1).angle(&(*pos - best_pos))
     };
 
     let mut removed_asteroids = vec![];

@@ -39,6 +39,19 @@ pub fn in_bounds(pos: &Vec2, w: i64, h: i64) -> bool {
     pos.0 >= 0 && pos.0 < w && pos.1 >= 0 && pos.1 < h
 }
 
+impl Vec2 {
+    pub fn angle(&self, b: &Vec2) -> f64 {
+        let dot = self.0 * b.0 + self.1 * b.1;
+        let det = self.0 * b.1 - self.1 * b.0;
+        let angle = (det as f64).atan2(dot as f64);
+        if angle < 0f64 {
+            2f64 * std::f64::consts::PI + angle
+        } else {
+            angle
+        }
+    }
+}
+
 #[cfg(test)]
 mod vec2_tests {
     use super::*;
