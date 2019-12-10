@@ -2,6 +2,7 @@
 
 mod util;
 use util::vec2::*;
+use util::gcd;
 
 use itertools::Itertools;
 use std::collections::HashSet;
@@ -17,47 +18,14 @@ fn get(space: &Vec<Vec<Position>>, pos: &Vec2) -> Position {
     space[pos.1 as usize][pos.0 as usize]
 }
 
-fn in_bounds(pos: &Vec2, w: i64, h: i64) -> bool {
-    pos.0 >= 0 && pos.0 < w && pos.1 >= 0 && pos.1 < h
-}
-
-fn gcd(a: i64, b: i64) -> i64 {
-    assert!(!(a == 0 && b == 0));
-    if a == 0 {
-        b
-    } else if b == 0 {
-        a
-    } else if (a > b) {
-        gcd(a - b, b)
-    } else if (b > a) {
-        gcd(a, b - a)
-    } else {
-        assert_eq!(a, b);
-        a
-    }
-}
-fn get_visible_asteroids_field(pos: Vec2, space: &Vec<Vec<Position>>) -> Vec<Vec2> {
-    use Position::*;
-    let h: i64 = space.len() as i64;
-    let w: i64 = space[0].len() as i64;
-    let asteroids: Vec<_> = (0..w)
-        .cartesian_product(0..h)
-        .map(|(x, y)| Vec2(x as i64, y as i64))
-        .filter(|pos| get(&space, pos) == Asteroid)
-        .collect();
-    get_visible_asteroids(pos, &asteroids, w, h)
-}
-
 fn get_visible_asteroids(pos: Vec2, space: &Vec<Vec2>, w: i64, h: i64) -> Vec<Vec2> {
-//    println!("------------------------");
-//    dbg!(&pos);
-
-    let max_side = std::cmp::max(pos.0, std::cmp::max(pos.1, std::cmp::max(w - pos.0, h - pos.1))) + 1;
-//    dbg!(max_side);
+    let max_side = [pos.0, pos.1, w - pos.0, h - pos.1].iter().max().unwrap() + 1;
 
     let mut hidden = HashSet::new();
 
+    // TODO: Get rid of this check
     if !space.contains(&pos) {
+        assert!(false);
         return vec![];
     }
 
@@ -67,8 +35,6 @@ fn get_visible_asteroids(pos: Vec2, space: &Vec<Vec2>, w: i64, h: i64) -> Vec<Ve
             let r = pos.0 + side_dist + 1;
             let b = pos.1 + side_dist + 1;
             let l = pos.0 - side_dist;
-
-//            println!("{:?}", (t, r, b, l));
 
             let top_row = (l..r).cartesian_product(t..t+1).map(|(x, y)| Vec2(x, y));
             let right_row = (r-1..r).cartesian_product(t+1..b-1).map(|(x, y)| Vec2(x, y));
@@ -80,39 +46,29 @@ fn get_visible_asteroids(pos: Vec2, space: &Vec<Vec2>, w: i64, h: i64) -> Vec<Ve
         .flatten()
         .filter(|pos| in_bounds(pos, w, h))
         .filter(|pos| space.contains(pos))
-        .map(|look_pos| {
+        .filter_map(|look_pos| {
             let visible = !hidden.contains(&look_pos);
             if visible {
-//                println!("{}: visible", look_pos);
-
                 let mut delta = look_pos - pos;
-//                dbg!(&delta);
                 let delta_gcd = gcd(delta.0.abs(), delta.1.abs());
-                delta.0 = delta.0 / delta_gcd;
-                delta.1 = delta.1 / delta_gcd;
-//                dbg!(&delta);
+                delta = delta / delta_gcd;
+
                 let mut current_pos = look_pos + delta;
                 while in_bounds(&current_pos, w, h) {
-//                    println!("Hiding: {}", current_pos);
                     hidden.insert(current_pos);
                     current_pos = current_pos + delta;
                 }
 
                 Some(look_pos)
             } else {
-//                println!("{}: not visible", look_pos);
                 None
             }
         })
-        .filter(|x| x.is_some())
-        .map(|x| x.unwrap())
         .collect()
 }
 
-fn count_visible_asteroids(pos: Vec2, space: &Vec<Vec<Position>>) -> (Vec2, i64) {
-    let visible_asteroids = get_visible_asteroids_field(pos, space);
-
-//    println!("Result for pos {}: {}", pos, visible_asteroids.len());
+fn count_visible_asteroids(pos: Vec2, space: &Vec<Vec2>, w: i64, h: i64) -> (Vec2, i64) {
+    let visible_asteroids = get_visible_asteroids(pos, space, w, h);
 
     return (pos, visible_asteroids.len() as i64);
 }
@@ -156,20 +112,7 @@ fn get_least(space: &Vec<Vec2>, min_angle: Option<f64>) -> Option<Vec2> {
 }
 
 fn main() {
-//    let input = std::fs::read_to_string("test_input1.txt").unwrap();
-//    let input = std::fs::read_to_string("test_input2.txt").unwrap();
-//    let input = std::fs::read_to_string("test_input3.txt").unwrap();
-//    let input = std::fs::read_to_string("test_input4.txt").unwrap();
-//    let input = std::fs::read_to_string("test_input5.txt").unwrap();
     let input = std::fs::read_to_string("input.txt").unwrap();
-
-    dbg!(angle(Vec2(0, -1), Vec2(3, -3)));
-    dbg!(angle(Vec2(0, -1), Vec2(3, 3)));
-    dbg!(angle(Vec2(0, -1), Vec2(-3, 3)));
-    dbg!(angle(Vec2(0, -1), Vec2(-3, -3)));
-
-    println!("gcd(2, 4) = {}", gcd(2, 4));
-    dbg!(gcd(10, 0));
 
     println!("{}", input);
 
@@ -190,19 +133,18 @@ fn main() {
     let h = space.len() as i64;
     let w = space[0].len() as i64;
 
-    let (best_pos, vision_score) = (0..w)
-        .cartesian_product(0..h)
-        .map(|(x, y)| count_visible_asteroids(Vec2(x as i64, y as i64), &space))
-        .max_by_key(|(pos, count)| *count).unwrap();
-
-    dbg!(best_pos);
-    dbg!(vision_score);
-
     let mut asteroids: Vec<_> = (0..w)
         .cartesian_product(0..h)
         .map(|(x, y)| Vec2(x as i64, y as i64))
         .filter(|pos| get(&space, pos) == Asteroid)
         .collect();
+
+    let (best_pos, vision_score) = asteroids.iter()
+        .map(|pos| count_visible_asteroids(*pos, &asteroids, w, h))
+        .max_by_key(|(pos, count)| *count).unwrap();
+
+    dbg!(best_pos);
+    dbg!(vision_score);
 
     let mut remove_count = 0;
 
@@ -250,29 +192,6 @@ fn main() {
             // Finish rotation
             min_angle = None;
         }
-
-//        // Do rotation
-//        let mut current_target = get_least(&asteroids, None);
-//
-//        remove_count += 1;
-//        asteroids.remove_item(&current_target.unwrap());
-//        println!("Removing: {}", best_pos + current_target.unwrap());
-//        if remove_count == 200 {
-//            let target = current_target.unwrap() + best_pos;
-//            dbg!(target.0 * 100 + target.1);
-//        }
-//
-//        current_target = get_least(&asteroids, Some(angle(Vec2(0, -1), current_target.unwrap())));
-//        while current_target.is_some() {
-//            asteroids.remove_item(&current_target.unwrap());
-//            remove_count += 1;
-//            println!("Removing: {}", best_pos + current_target.unwrap());
-//            if remove_count == 200 {
-//                let target = current_target.unwrap() + best_pos;
-//                dbg!(target.0 * 100 + target.1);
-//            }
-//            current_target = get_least(&asteroids, Some(angle(Vec2(0, -1), current_target.unwrap())))
-//        }
     }
 
     // 371 too high
@@ -280,4 +199,5 @@ fn main() {
     // 359 too high
 
     // 1723 wrong. too low
+    // 2732 good!
 }
