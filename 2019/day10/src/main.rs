@@ -6,18 +6,6 @@ use util::gcd;
 
 use itertools::Itertools;
 use std::collections::HashSet;
-use std::thread::current;
-
-// TODO: Get rid of this
-#[derive(Debug, Ord, PartialOrd, Eq, PartialEq, Clone, Copy)]
-enum Position {
-    Asteroid,
-    Empty
-}
-
-fn get(space: &Vec<Vec<Position>>, pos: &Vec2) -> Position {
-    space[pos.1 as usize][pos.0 as usize]
-}
 
 fn get_visible_asteroids(pos: Vec2, space: &Vec<Vec2>, w: i64, h: i64) -> Vec<Vec2> {
     let max_side = [pos.0, pos.1, w - pos.0, h - pos.1].iter().max().unwrap() + 1;
@@ -85,28 +73,20 @@ fn main() {
 
     println!("{}", input);
 
-    use Position::*;
+    let mut asteroids: Vec<Vec2> = input.trim().split("\n").enumerate().map(|(y, row)| {
+        row.chars()
+            .enumerate()
+            .filter_map(move |(x, position)| {
+                if position == '#' {
+                    Some(Vec2(x as i64, y as i64))
+                } else {
+                    None
+                }
+            })
+    }).flatten().collect();
 
-    let space: Vec<Vec<_>> = input.trim().split("\n").map(|row| {
-        row.chars().map(|location|
-            if location == '#' {
-                Asteroid
-            } else if location == '.' {
-                Empty
-            } else {
-                panic!("{}", location);
-            }
-        ).collect()
-    }).collect();
-
-    let h = space.len() as i64;
-    let w = space[0].len() as i64;
-
-    let mut asteroids: Vec<_> = (0..w)
-        .cartesian_product(0..h)
-        .map(|(x, y)| Vec2(x as i64, y as i64))
-        .filter(|pos| get(&space, pos) == Asteroid)
-        .collect();
+    let h = *asteroids.iter().map(|Vec2(_, y)| y).max().unwrap() + 1;
+    let w = *asteroids.iter().map(|Vec2(x, _)| x).max().unwrap() + 1;
 
     let (best_pos, vision_score) = asteroids.iter()
         .map(|pos| count_visible_asteroids(*pos, &asteroids, w, h))
@@ -118,9 +98,6 @@ fn main() {
     let calc_angle = |pos: &Vec2| {
         angle(Vec2(0, -1), *pos - best_pos)
     };
-
-    let mut remove_count = 0;
-    let remove_target = 200;
 
     let mut removed_asteroids = vec![];
 
@@ -140,7 +117,7 @@ fn main() {
             }
     }
 
-    let target = removed_asteroids[199];
+    let target = removed_asteroids[199]; // Select the 200th asteroid
     dbg!(target.0 * 100 + target.1);
 
     // 371 too high
