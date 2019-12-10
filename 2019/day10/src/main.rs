@@ -8,6 +8,7 @@ use itertools::Itertools;
 use std::collections::HashSet;
 use std::thread::current;
 
+// TODO: Get rid of this
 #[derive(Debug, Ord, PartialOrd, Eq, PartialEq, Clone, Copy)]
 enum Position {
     Asteroid,
@@ -22,12 +23,6 @@ fn get_visible_asteroids(pos: Vec2, space: &Vec<Vec2>, w: i64, h: i64) -> Vec<Ve
     let max_side = [pos.0, pos.1, w - pos.0, h - pos.1].iter().max().unwrap() + 1;
 
     let mut hidden = HashSet::new();
-
-    // TODO: Get rid of this check
-    if !space.contains(&pos) {
-        assert!(false);
-        return vec![];
-    }
 
     (1..max_side)
         .map(|side_dist| {
@@ -84,34 +79,8 @@ fn angle(a: Vec2, b: Vec2) -> f64 {
     }
 }
 
-fn get_least(space: &Vec<Vec2>, min_angle: Option<f64>) -> Option<Vec2> {
-    if space.len() == 0 {
-        return None;
-    }
-
-    let mut res: Option<Vec2> = None;
-    let mut res_angle = 0.;
-    for candidate in space {
-        let candidate_angle = angle(Vec2(0, -1), *candidate);
-        if res.is_none() && min_angle.is_none() {
-            res = Some(*candidate);
-            res_angle = candidate_angle
-        } else if res.is_none() && min_angle.is_some() && candidate_angle > min_angle.unwrap() {
-            res = Some(*candidate);
-            res_angle = candidate_angle;
-        } else if res.is_some() && min_angle.is_none() && candidate_angle < res_angle {
-            res = Some(*candidate);
-            res_angle = candidate_angle;
-        } else if res.is_some() && min_angle.is_some() && candidate_angle < res_angle && candidate_angle > min_angle.unwrap() {
-            res = Some(*candidate);
-            res_angle = candidate_angle;
-        }
-    }
-
-    res
-}
-
 fn main() {
+//    let input = std::fs::read_to_string("test_input1.txt").unwrap();
     let input = std::fs::read_to_string("input.txt").unwrap();
 
     println!("{}", input);
@@ -146,53 +115,33 @@ fn main() {
     dbg!(best_pos);
     dbg!(vision_score);
 
+    let calc_angle = |pos: &Vec2| {
+        angle(Vec2(0, -1), *pos - best_pos)
+    };
+
     let mut remove_count = 0;
+    let remove_target = 200;
 
-    let mut min_angle = None;
-    while asteroids.len() > 0 {
-        println!("-----------------");
-        // Get visible asteroids
-        let visible_asteroids = get_visible_asteroids(best_pos, &asteroids, w, h).into_iter()
-            .map(|pos| pos - best_pos)
+    let mut removed_asteroids = vec![];
+
+    while asteroids.len() > 1 {
+        let visible_asteroids: Vec<_> = get_visible_asteroids(best_pos, &asteroids, w, h)
+            .into_iter()
+            .sorted_by(|pos_a, pos_b| {
+                let angle_a = calc_angle(pos_a);
+                let angle_b = calc_angle(pos_b);
+                angle_a.partial_cmp(&angle_b).unwrap()
+            })
             .collect();
-//        dbg!(&visible_asteroids);
 
-        let current_target = get_least(&visible_asteroids, min_angle);
-
-        dbg!(&current_target);
-        dbg!(&min_angle);
-
-        if current_target.is_none() && min_angle.is_none() {
-            // We're done
-            break
-        } else if current_target.is_some() && min_angle.is_none() {
-            // First hit, save the angle
-            min_angle = Some(angle(Vec2(0, -1), current_target.unwrap()));
-            // Hit the target
-            remove_count += 1;
-            asteroids.remove_item(&current_target.unwrap());
-            println!("Removing: {}", best_pos + current_target.unwrap());
-            if remove_count == 200 {
-                let target = current_target.unwrap() + best_pos;
-                dbg!(target.0 * 100 + target.1);
-                break;
+            for asteroid in &visible_asteroids {
+                asteroids.remove_item(asteroid);
+                removed_asteroids.push(*asteroid);
             }
-        } else if current_target.is_some() && min_angle.is_some() {
-            min_angle = Some(angle(Vec2(0, -1), current_target.unwrap()));
-            // Hit the target
-            remove_count += 1;
-            asteroids.remove_item(&current_target.unwrap());
-            println!("Removing: {}", best_pos + current_target.unwrap());
-            if remove_count == 200 {
-                let target = current_target.unwrap() + best_pos;
-                dbg!(target.0 * 100 + target.1);
-                break;
-            }
-        } else if current_target.is_none() && min_angle.is_some() {
-            // Finish rotation
-            min_angle = None;
-        }
     }
+
+    let target = removed_asteroids[199];
+    dbg!(target.0 * 100 + target.1);
 
     // 371 too high
     // 362 too high
