@@ -29,6 +29,11 @@ rel_path = os.path.join(os.path.abspath(sys.path[0]), "day{}".format(day))
 command = ["cargo", "add", "itertools"]
 subprocess.run(command, cwd=rel_path)
 
+print("Adding nalgebra...")
+rel_path = os.path.join(os.path.abspath(sys.path[0]), "day{}".format(day))
+command = ["cargo", "add", "nalgebra"]
+subprocess.run(command, cwd=rel_path)
+
 print("Downloading puzzle...")
 from aocd.models import Puzzle
 puzzle = Puzzle(year=2019, day=day)
