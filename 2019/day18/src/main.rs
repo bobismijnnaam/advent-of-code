@@ -7,38 +7,50 @@ use util::*;
 use util::direction::*;
 use util::direction::Direction::*;
 use std::cmp::Ordering;
+use std::mem::swap;
+use itertools::Itertools;
 
 #[derive(Debug, Clone)]
-struct Maze(Vec<Vec<char>>);
+struct Maze {
+    grid: Vec<Vec<char>>,
+    reachable_keys_cache: HashMap<(Vector2<i32>, KeySet), Vec<(char, usize)>>,
+}
 
-type KeySet = HashSet<char>;
+type KeySet = [bool; 26];
+
+fn KeySet_new() -> KeySet {
+    [false; 26]
+}
 
 impl Maze {
     fn new(input: String) -> Maze {
-        Maze(input.trim().split('\n').map(|row| row.chars().collect()).collect())
+        Maze {
+            grid: input.trim().split('\n').map(|row| row.chars().collect()).collect(),
+            reachable_keys_cache: HashMap::new(),
+        }
     }
 
     fn get(&self, pos: Vector2<i32>) -> char {
-        self.0[pos.y as usize][pos.x as usize]
+        self.grid[pos.y as usize][pos.x as usize]
     }
 
-//    fn set(&mut self, pos: Vector2<i32>, val: char) {
-//        self.0[pos.y as usize][pos.x as usize] = val;
-//    }
+    fn set(&mut self, pos: Vector2<i32>, c: char) {
+        self.grid[pos.y as usize][pos.x as usize] = c;
+    }
 
-    fn is_passable(&self, pos: Vector2<i32>, keys: &KeySet) -> bool {
+    fn is_passable(&self, pos: Vector2<i32>, me: &Me) -> bool {
         match self.get(pos) {
             '.' => true,
             '@' => true,
             '#' => false,
-            'a'..='z' => true,
-            door @ 'A'..='Z' => keys.contains(&door.to_ascii_lowercase()),
+            key @ 'a'..='z' => me.has_key(key),
+            door @ 'A'..='Z' => me.has_key(door.to_ascii_lowercase()),
             c => panic!("{}?", c),
         }
     }
 
     fn size(&self) -> Vector2<i32> {
-        let field = &self.0;
+        let field = &self.grid;
         Vector2::new(field[0].len() as i32, field.len() as i32)
     }
 
@@ -49,18 +61,28 @@ impl Maze {
             .collect()
     }
 
-    fn get_reachable_keys(&self) -> Vec<(char, usize)> {
-        let current_pos = self.get_pos_of_raw('@');
+    fn get_new_reachable_keys(&self, me: &Me) -> Vec<(char, usize)> {
         self.get_keys().iter()
+            .filter(|&&key| !me.has_key(key))
             .filter_map(|&key| {
                 let key_pos = self.get_pos_of_raw(key);
-                if let Some(cost) = self.a_star(current_pos, key_pos) {
+                if let Some(cost) = self.num_steps(me.position, key_pos, &me) {
                     Some((key, cost as usize))
                 } else {
                     None
                 }
             })
             .collect()
+    }
+
+    fn get_new_reachable_keys_cache(&mut self, me: &Me) -> Vec<(char, usize)> {
+        if let Some(reachable_keys) = self.reachable_keys_cache.get(&(me.position, me.keys)) {
+            reachable_keys.clone()
+        } else {
+            let keys = self.get_new_reachable_keys(&me);
+            self.reachable_keys_cache.insert((me.position, me.keys), keys.clone());
+            keys
+        }
     }
 
     fn get_pos_of(&self, target: char) -> Option<Vector2<i32>> {
@@ -76,11 +98,24 @@ impl Maze {
         None
     }
 
+    fn get_positions_of_raw(&self, target: char) -> Vec<Vector2<i32>> {
+        let size = self.size();
+        (0..size.x)
+            .cartesian_product(0..size.y)
+            .map(|(x, y)| Vector2::new(x, y))
+            .filter_map(|pos| if self.get(pos) == target {
+                Some(pos)
+            } else {
+                None
+            })
+            .collect()
+    }
+
     fn get_pos_of_raw(&self, target: char) -> Vector2<i32> {
         self.get_pos_of(target).unwrap()
     }
 
-    fn num_steps(&self, from: Vector2<i32>, to: Vector2<i32>, keys: &KeySet) -> Option<i32> {
+    fn num_steps(&self, from: Vector2<i32>, to: Vector2<i32>, me: &Me) -> Option<i32> {
         let mut cost: HashMap<Vector2<i32>, i32> = HashMap::new();
         let mut parent: HashMap<Vector2<i32>, Vector2<i32>> = HashMap::new();
         let mut frontier: Vec<Vector2<i32>> = vec![from];
@@ -94,7 +129,7 @@ impl Maze {
                 let next_pos = pos + dir.to_vec();
                 let next_cost = pos_cost + 1;
 
-                if !self.is_passable(next_pos, keys) {
+                if !(self.is_passable(next_pos, me) || next_pos == to) {
                     continue;
                 }
 
@@ -127,139 +162,143 @@ impl Maze {
         }
     }
 
-    fn a_star(&self, from: Vector2<i32>, to: Vector2<i32>) -> Option<i32> {
-        #[derive(Copy, Clone, Eq, PartialEq)]
-        struct State {
-            initial_cost: usize,
-            predicted_cost: usize,
-            position: Vector2<i32>,
+    fn explode_entrance(&mut self) {
+        let starting_pos = self.get_pos_of_raw('@');
+        self.set(starting_pos, '#');
+        for dir in &[North, East, South, West] {
+            self.set(starting_pos + dir.to_vec(), '#');
+            self.set(starting_pos + dir.to_vec() + dir.left().to_vec(), '@');
         }
-
-        impl State {
-            fn total_cost(&self) -> usize {
-                self.initial_cost + self.predicted_cost
-            }
-        }
-
-        // From std
-        impl Ord for State {
-            fn cmp(&self, other: &State) -> Ordering {
-                // Notice that the we flip the ordering on costs.
-                // In case of a tie we compare positions - this step is necessary
-                // to make implementations of `PartialEq` and `Ord` consistent.
-                other.total_cost().cmp(&self.total_cost())
-                    .then_with(|| self.position.x.cmp(&other.position.x))
-                    .then_with(|| self.position.y.cmp(&other.position.y))
-            }
-        }
-
-        // `PartialOrd` needs to be implemented as well.
-        impl PartialOrd for State {
-            fn partial_cmp(&self, other: &State) -> Option<Ordering> {
-                Some(self.cmp(other))
-            }
-        }
-
-        let mut heap = BinaryHeap::new();
-        let mut costs: HashMap<Vector2<i32>, usize> = HashMap::new();
-
-        costs.insert(from, 0);
-
-        heap.push(State {
-            position: from,
-            initial_cost: 0,
-            predicted_cost: 0,
-        });
-
-        while let Some(State { initial_cost, predicted_cost, position}) = heap.pop() {
-            if position == to {
-                return Some(initial_cost as i32)
-            }
-
-            for dir in &[North, East, South, West] { // TODO: Refactor to .neighbours
-                let next_pos = position + dir.to_vec();
-                let next_cost = initial_cost + 1;
-
-                if !self.is_passable(next_pos) {
-                    continue;
-                }
-
-                if !costs.contains_key(&next_pos) || next_cost < *costs.get(&next_pos).unwrap() {
-                    costs.insert(next_pos, next_cost);
-                    heap.push(State {
-                        position: next_pos,
-                        initial_cost: next_cost,
-                        predicted_cost: manhattan(next_pos, to) as usize,
-                    });
-                }
-            }
-        }
-
-        None
     }
-
-//    fn unlock(&self, key: char) {
-//        assert!(key.is_ascii_lowercase());
-//        let current_pos = self.get_pos_of_raw('@');
-//        let key_pos = self.get_pos_of_raw(key);
-//        let door_pos = self.get_pos_of(key.to_ascii_uppercase());
-//
-//        self.set(key_pos, '@');
-//        if let Some(door_pos) = door_pos {
-//            self.set(door_pos, '.');
-//        }
-//        self.set(current_pos, '.');
-//    }
 }
 
-fn solve(maze: Maze, depth: i32) -> i32 {
-    let reachable_keys = maze.get_reachable_keys();
+#[derive(Clone, Debug, Hash, Eq, PartialEq,)]
+struct Me {
+    position: Vector2<i32>,
+    steps_taken: i32,
+    keys: KeySet,
+}
+
+impl Me {
+    fn grab_key(&mut self, maze: &Maze, key: char, key_distance: i32) {
+        assert!(key.is_ascii_lowercase());
+        let key_pos = maze.get_pos_of_raw(key);
+
+        self.position = key_pos;
+        self.add_key(key);
+        self.steps_taken += key_distance;
+    }
+
+    fn add_key(&mut self, key: char) {
+        self.keys[(key as u8 - 'a' as u8) as usize] = true;
+    }
+
+    fn has_key(&self, key: char) -> bool {
+        self.keys[(key as u8 - 'a' as u8) as usize]
+    }
+
+    fn has_all_keys(&self, maze: &Maze) -> bool {
+        maze.get_keys().iter().all(|key| self.has_key(*key))
+    }
+
+    fn merge(&self, mes: &Vec<Me>) -> Me {
+        let mut me = self.clone();
+        for other_me in mes {
+            for i in 0..26 {
+                me.keys[0] = me.keys[0] || other_me.keys[0];
+            }
+        }
+        me
+    }
+}
+
+fn solve_dp(maze: &Maze, me: Me, results_cache: &mut HashMap<Me, i32>, reachable_keys_cache: &mut HashMap<(Vector2<i32>, KeySet), Vec<(char, usize)>>) -> i32 {
+    let reachable_keys: Vec<_> = if let Some(reachable_keys) = reachable_keys_cache.get(&(me.position, me.keys)) {
+        reachable_keys.clone()
+    } else {
+        let k = maze.get_new_reachable_keys(&me);
+        reachable_keys_cache.insert((me.position, me.keys), k.clone());
+        k
+    };
 
     if reachable_keys.len() == 0 {
-        0
+        me.steps_taken
     } else {
-        if depth == 0 || depth == 1 || depth == 2 {
-            println!("Reachable keys at depth {}: {:?}", depth, reachable_keys)
-        }
+        reachable_keys.iter().map(|(key, extra_steps_needed)| {
+            let mut me = me.clone();
+            me.grab_key(maze, *key, *extra_steps_needed as i32);
 
-        reachable_keys.iter().map(|(key, cost)| {
-            let mut maze = maze.clone();
-            maze.unlock(*key);
-            if depth == 0 || depth == 1 || depth == 2 {
-                println!("Getting key {} took {} steps at depth {}", key, cost, depth);
+            if let Some(&entry) = results_cache.get(&me) {
+                entry
+            } else {
+                let res = solve_dp(maze, me.clone(), results_cache, reachable_keys_cache);
+                if !results_cache.contains_key(&me) {
+                    results_cache.insert(me, res);
+                }
+                res
             }
-            solve(maze, depth + 1) + (*cost as i32)
         }).min().unwrap()
     }
 }
 
-fn solve_bfs(maze: Maze) -> i32 {
-    let mut frontier = vec![(maze, 0)];
+fn solve_dp_2(maze: &mut Maze, mes: Vec<Me>, results_cache: &mut HashMap<Vec<Me>, i32>) -> i32 {
+    if let Some(res) = results_cache.get(&mes) {
+        *res
+    } else {
+        let move_candidates: Vec<_> = mes.iter().positions(|me| maze.get_new_reachable_keys_cache(me).len() > 0).collect();
 
-    loop {
-        dbg!(frontier.len());
-        let min_index = frontier.iter().enumerate().min_by_key(|(i, (_, cost))| cost).unwrap().0;
-        let (maze, cost) = frontier.remove(min_index);
-        let reachable_keys = maze.get_reachable_keys();
-        dbg!(cost);
-
-        if reachable_keys.len() == 0 {
-            return cost;
+        let res = if move_candidates.len() == 0 {
+            mes.iter().map(|me| me.steps_taken).sum()
         } else {
-            frontier.extend(reachable_keys.iter().map(|(key, key_cost)| {
-                let mut maze = maze.clone();
-                maze.unlock(*key);
-                (maze, cost + *key_cost as i32)
-            }));
-        }
+            move_candidates.iter().map(|&move_candidate_i| {
+                let me = &mes[move_candidate_i];
+                let reachable_keys = maze.get_new_reachable_keys_cache(me);
+                reachable_keys.iter().map(|(key, extra_steps_needed)| {
+                    let mut mes = mes.clone();
+                    mes[move_candidate_i].grab_key(maze, *key, *extra_steps_needed as i32);
+                    for me in &mut mes {
+                        me.add_key(*key);
+                    }
+
+                    solve_dp_2(maze, mes, results_cache)
+
+                }).min().unwrap()
+            }).min().unwrap()
+        };
+
+        results_cache.insert(mes, res);
+
+        res
     }
 }
 
 fn main() {
+//    let input = read_to_string("input_2_test1.txt").unwrap();
+    let input = read_to_string("input.txt").unwrap();
+    println!("{}", input);
+
+    let mut maze = Maze::new(input);
+
+    maze.explode_entrance();
+
+    let mes: Vec<_> = maze.get_positions_of_raw('@').iter().map(|start_pos| Me {
+        position: *start_pos,
+        steps_taken: 0,
+        keys: KeySet_new()
+    }).collect();
+
+    dbg!(solve_dp_2(&mut maze, mes, &mut HashMap::new()));
+
+    // 460 too low?
+    // 1996
+}
+
+fn main1() {
     let input = read_to_string("input_test1.txt").unwrap();
     let input = read_to_string("input_test2.txt").unwrap();
     let input = read_to_string("input_test3.txt").unwrap();
     let input = read_to_string("input_test4.txt").unwrap();
+    let input = read_to_string("input.txt").unwrap();
     println!("{}", input);
 
     let maze = Maze::new(input);
@@ -267,18 +306,15 @@ fn main() {
     println!("{:?}", maze);
     println!("{:?}", maze.get_keys());
 
-    println!("{:?}", maze.get_reachable_keys());
+    let mut me = Me {
+        position: maze.get_pos_of_raw('@'),
+        keys: [false; 26],
+        steps_taken: 0,
+    };
 
-//
-//    let reachable_keys = maze.get_reachable_keys();
-//
-//    let key_1_pos = maze.get_pos_of_raw(reachable_keys[0]);
-//    let key_2_pos = maze.get_pos_of_raw(reachable_keys[1]);
-//
-//    dbg!(maze.num_steps(key_1_pos, key_2_pos));
-//    dbg!(maze.a_star(key_1_pos, key_2_pos));
-//
-//    return;
+    println!("Reachable: {:?}", maze.get_new_reachable_keys(&me));
 
-    println!("{}", solve_bfs(maze));
+    println!("{}", solve_dp(&maze, me, &mut HashMap::new(), &mut HashMap::new()));
+
+    // 5964 done
 }
