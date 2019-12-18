@@ -1,13 +1,9 @@
 use nalgebra::Vector2;
 use std::fs::read_to_string;
-use std::collections::{HashMap, BinaryHeap, HashSet};
+use std::collections::HashMap;
 
 mod util;
-use util::*;
-use util::direction::*;
 use util::direction::Direction::*;
-use std::cmp::Ordering;
-use std::mem::swap;
 use itertools::Itertools;
 
 #[derive(Debug, Clone)]
@@ -18,7 +14,7 @@ struct Maze {
 
 type KeySet = [bool; 26];
 
-fn KeySet_new() -> KeySet {
+fn key_set_new() -> KeySet {
     [false; 26]
 }
 
@@ -196,48 +192,27 @@ impl Me {
     fn has_key(&self, key: char) -> bool {
         self.keys[(key as u8 - 'a' as u8) as usize]
     }
-
-    fn has_all_keys(&self, maze: &Maze) -> bool {
-        maze.get_keys().iter().all(|key| self.has_key(*key))
-    }
-
-    fn merge(&self, mes: &Vec<Me>) -> Me {
-        let mut me = self.clone();
-        for other_me in mes {
-            for i in 0..26 {
-                me.keys[0] = me.keys[0] || other_me.keys[0];
-            }
-        }
-        me
-    }
 }
 
-fn solve_dp(maze: &Maze, me: Me, results_cache: &mut HashMap<Me, i32>, reachable_keys_cache: &mut HashMap<(Vector2<i32>, KeySet), Vec<(char, usize)>>) -> i32 {
-    let reachable_keys: Vec<_> = if let Some(reachable_keys) = reachable_keys_cache.get(&(me.position, me.keys)) {
-        reachable_keys.clone()
+fn solve_dp(maze: &mut Maze, me: Me, results_cache: &mut HashMap<Me, i32>) -> i32 {
+    if let Some(&entry) = results_cache.get(&me) {
+        entry
     } else {
-        let k = maze.get_new_reachable_keys(&me);
-        reachable_keys_cache.insert((me.position, me.keys), k.clone());
-        k
-    };
+        let reachable_keys = maze.get_new_reachable_keys_cache(&me);
 
-    if reachable_keys.len() == 0 {
-        me.steps_taken
-    } else {
-        reachable_keys.iter().map(|(key, extra_steps_needed)| {
-            let mut me = me.clone();
-            me.grab_key(maze, *key, *extra_steps_needed as i32);
+        if reachable_keys.len() == 0 {
+            me.steps_taken
+        } else {
+            let res = reachable_keys.iter().map(|(key, extra_steps_needed)| {
+                let mut me = me.clone();
+                me.grab_key(maze, *key, *extra_steps_needed as i32);
+                solve_dp(maze, me, results_cache)
+            }).min().unwrap();
 
-            if let Some(&entry) = results_cache.get(&me) {
-                entry
-            } else {
-                let res = solve_dp(maze, me.clone(), results_cache, reachable_keys_cache);
-                if !results_cache.contains_key(&me) {
-                    results_cache.insert(me, res);
-                }
-                res
-            }
-        }).min().unwrap()
+            results_cache.insert(me, res);
+
+            res
+        }
     }
 }
 
@@ -261,7 +236,6 @@ fn solve_dp_2(maze: &mut Maze, mes: Vec<Me>, results_cache: &mut HashMap<Vec<Me>
                     }
 
                     solve_dp_2(maze, mes, results_cache)
-
                 }).min().unwrap()
             }).min().unwrap()
         };
@@ -272,7 +246,7 @@ fn solve_dp_2(maze: &mut Maze, mes: Vec<Me>, results_cache: &mut HashMap<Vec<Me>
     }
 }
 
-fn main() {
+fn main2() {
 //    let input = read_to_string("input_2_test1.txt").unwrap();
     let input = read_to_string("input.txt").unwrap();
     println!("{}", input);
@@ -284,7 +258,7 @@ fn main() {
     let mes: Vec<_> = maze.get_positions_of_raw('@').iter().map(|start_pos| Me {
         position: *start_pos,
         steps_taken: 0,
-        keys: KeySet_new()
+        keys: key_set_new()
     }).collect();
 
     dbg!(solve_dp_2(&mut maze, mes, &mut HashMap::new()));
@@ -294,27 +268,32 @@ fn main() {
 }
 
 fn main1() {
-    let input = read_to_string("input_test1.txt").unwrap();
-    let input = read_to_string("input_test2.txt").unwrap();
-    let input = read_to_string("input_test3.txt").unwrap();
-    let input = read_to_string("input_test4.txt").unwrap();
+//    let input = read_to_string("input_test1.txt").unwrap();
+//    let input = read_to_string("input_test2.txt").unwrap();
+//    let input = read_to_string("input_test3.txt").unwrap();
+//    let input = read_to_string("input_test4.txt").unwrap();
     let input = read_to_string("input.txt").unwrap();
     println!("{}", input);
 
-    let maze = Maze::new(input);
+    let mut maze = Maze::new(input);
 
     println!("{:?}", maze);
     println!("{:?}", maze.get_keys());
 
-    let mut me = Me {
+    let me = Me {
         position: maze.get_pos_of_raw('@'),
-        keys: [false; 26],
+        keys: key_set_new(),
         steps_taken: 0,
     };
 
     println!("Reachable: {:?}", maze.get_new_reachable_keys(&me));
 
-    println!("{}", solve_dp(&maze, me, &mut HashMap::new(), &mut HashMap::new()));
+    println!("{}", solve_dp(&mut maze, me, &mut HashMap::new()));
 
     // 5964 done
+}
+
+fn main() {
+    main1();
+    main2();
 }
