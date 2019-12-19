@@ -53,6 +53,42 @@ impl Maze {
         res
     }
 
+    fn optimize(&mut self) {
+        let mut changed = true;
+        let mut i = 0;
+        while changed {
+            changed = false;
+            for y in 1..self.size().y - 1 {
+                for x in 1..self.size().x - 1 {
+                    let pos = Vector2::new(x, y);
+                    if self.get(pos) == '.' {
+                        let num_wall_neighbours = *&[North, East, South, West].iter()
+                            .map(|dir| { pos + dir.to_vec() })
+                            .map(|neighbour| { self.get(neighbour) })
+                            .filter(|c| *c == '#')
+                            .count();
+                        if num_wall_neighbours >= 3 as usize {
+                            // Dead end!
+                            self.set(pos, '#');
+                            changed = true;
+                            i += 1;
+                        }
+                    }
+                }
+            }
+        }
+        dbg!(i);
+    }
+
+    fn pretty_print(&self) {
+        for y in 0..self.size().y {
+            for x in 0..self.size().x {
+                print!("{}", self.get(Vector2::new(x, y)));
+            }
+            println!();
+        }
+    }
+
     fn get(&self, pos: Vector2<i32>) -> char {
         self.grid[pos.y as usize][pos.x as usize]
     }
@@ -235,36 +271,6 @@ impl Me {
     }
 }
 
-fn solve_dp_2(maze: &mut Maze, mes: Vec<Me>, results_cache: &mut HashMap<Vec<Me>, i32>) -> i32 {
-    if let Some(res) = results_cache.get(&mes) {
-        *res
-    } else {
-        let move_candidates: Vec<_> = mes.iter().positions(|me| maze.get_new_reachable_keys_cache(me).len() > 0).collect();
-
-        let res = if move_candidates.len() == 0 {
-            mes.iter().map(|me| me.steps_taken).sum()
-        } else {
-            move_candidates.iter().map(|&move_candidate_i| {
-                let me = &mes[move_candidate_i];
-                let reachable_keys = maze.get_new_reachable_keys_cache(me);
-                reachable_keys.iter().map(|&relative_key| {
-                    let mut mes = mes.clone();
-                    mes[move_candidate_i].grab_key(relative_key);
-                    for me in &mut mes {
-                        me.add_key(relative_key.key);
-                    }
-
-                    solve_dp_2(maze, mes, results_cache)
-                }).min().unwrap()
-            }).min().unwrap()
-        };
-
-        results_cache.insert(mes, res);
-
-        res
-    }
-}
-
 fn solve_dp_bfs(maze: &mut Maze, mes: Vec<Me>) -> i32 {
     let mut heap = BinaryHeap::with_capacity(500000);
     let mut seen_states = HashSet::with_capacity(500000);
@@ -314,6 +320,7 @@ fn main2() {
     let input = read_to_string("input.txt").unwrap();
 
     let mut maze = Maze::new(input);
+    maze.optimize();
 
     maze.explode_entrance();
 
@@ -336,9 +343,10 @@ fn main1() {
 //    let input = read_to_string("input_test3.txt").unwrap();
 //    let input = read_to_string("input_test4.txt").unwrap();
     let input = read_to_string("input.txt").unwrap();
-    println!("{}", input);
 
     let mut maze = Maze::new(input);
+    maze.optimize();
+    maze.pretty_print();
 
     println!("{:?}", maze.get_keys());
 
@@ -362,7 +370,7 @@ fn main() {
     let duration = start.elapsed();
     println!("Time elapsed in part 1 is: {:?}", duration);
 
-    if false {
+    if true {
         let start = Instant::now();
         main2();
         let duration = start.elapsed();
