@@ -1,15 +1,17 @@
 use nalgebra::Vector2;
 use std::fs::read_to_string;
-use std::collections::HashMap;
+use std::collections::{HashMap, BinaryHeap, HashSet};
 
 mod util;
 use util::direction::Direction::*;
 use itertools::Itertools;
+use std::cmp::{Reverse, Ordering};
+use std::time::Instant;
 
 #[derive(Debug, Clone)]
 struct Maze {
     grid: Vec<Vec<char>>,
-    reachable_keys_cache: HashMap<(Vector2<i32>, KeySet), Vec<(char, usize)>>,
+    reachable_keys_cache: HashMap<(Vector2<i32>, KeySet), Vec<RelativeKey>>,
 }
 
 type KeySet = [bool; 26];
@@ -18,6 +20,7 @@ fn key_set_new() -> KeySet {
     [false; 26]
 }
 
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
 struct RelativeKey {
     key: char,
     distance: usize,
@@ -78,14 +81,11 @@ impl Maze {
             .collect()
     }
 
-    fn get_new_reachable_keys(&self, me: &Me) -> Vec<(char, usize)> {
+    fn get_new_reachable_keys(&self, me: &Me) -> Vec<RelativeKey> {
         self.num_steps_to_keys(me.position, me)
-            .iter()
-            .map(|relative_key| (relative_key.key, relative_key.distance))
-            .collect()
     }
 
-    fn get_new_reachable_keys_cache(&mut self, me: &Me) -> Vec<(char, usize)> {
+    fn get_new_reachable_keys_cache(&mut self, me: &Me) -> Vec<RelativeKey> {
         if let Some(reachable_keys) = self.reachable_keys_cache.get(&(me.position, me.keys)) {
             reachable_keys.clone()
         } else {
@@ -94,6 +94,7 @@ impl Maze {
             keys
         }
     }
+
 
     fn get_pos_of(&self, target: char) -> Option<Vector2<i32>> {
         let size = self.size();
@@ -182,53 +183,6 @@ impl Maze {
             .collect()
     }
 
-    fn num_steps(&self, from: Vector2<i32>, to: Vector2<i32>, me: &Me) -> Option<i32> {
-        let mut cost: HashMap<Vector2<i32>, i32> = HashMap::new();
-        let mut parent: HashMap<Vector2<i32>, Vector2<i32>> = HashMap::new();
-        let mut frontier: Vec<Vector2<i32>> = vec![from];
-
-        cost.insert(from, 0);
-
-        while frontier.len() > 0 {
-            let pos = frontier.pop().unwrap();
-            let &pos_cost = cost.get(&pos).unwrap();
-            for dir in &[North, East, South, West] { // TODO: Refactor to .neighbours
-                let next_pos = pos + dir.to_vec();
-                let next_cost = pos_cost + 1;
-
-                if !(self.is_passable(next_pos, me) || next_pos == to) {
-                    continue;
-                }
-
-                if let Some(&old_cost) = cost.get(&next_pos) {
-                    // Have visited before
-                    if next_cost < old_cost {
-                        cost.insert(next_pos, next_cost);
-                        parent.insert(next_pos, pos);
-
-                        if next_pos != to {
-                            frontier.push(next_pos);
-                        }
-                    }
-                } else {
-                    // New!
-                    cost.insert(next_pos, next_cost);
-                    parent.insert(next_pos, pos);
-
-                    if next_pos != to {
-                        frontier.push(next_pos);
-                    }
-                }
-            }
-        }
-
-        if let Some(num_steps) = cost.get(&to) {
-            Some(*num_steps)
-        } else {
-            None
-        }
-    }
-
     fn explode_entrance(&mut self) {
         let starting_pos = self.get_pos_of_raw('@');
         self.set(starting_pos, '#');
@@ -239,21 +193,28 @@ impl Maze {
     }
 }
 
-#[derive(Clone, Debug, Hash, Eq, PartialEq,)]
+#[derive(Clone, Debug, Hash, Eq, PartialEq, PartialOrd)]
 struct Me {
     position: Vector2<i32>,
     steps_taken: i32,
     keys: KeySet,
 }
 
-impl Me {
-    fn grab_key(&mut self, maze: &Maze, key: char, key_distance: i32) {
-        assert!(key.is_ascii_lowercase());
-        let key_pos = maze.get_pos_of_raw(key);
+impl Ord for Me {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.position.x.cmp(&other.position.x)
+            .then(self.steps_taken.cmp(&other.steps_taken))
+            .then(self.keys.cmp(&other.keys))
+    }
+}
 
+impl Me {
+    fn grab_key(&mut self, maze: &Maze, relative_key: RelativeKey) {
+        assert!(relative_key.key.is_ascii_lowercase());
+        let key_pos = maze.get_pos_of_raw(relative_key.key);
         self.position = key_pos;
-        self.add_key(key);
-        self.steps_taken += key_distance;
+        self.add_key(relative_key.key);
+        self.steps_taken += relative_key.distance as i32;
     }
 
     fn add_key(&mut self, key: char) {
@@ -262,28 +223,6 @@ impl Me {
 
     fn has_key(&self, key: char) -> bool {
         self.keys[(key as u8 - 'a' as u8) as usize]
-    }
-}
-
-fn solve_dp(maze: &mut Maze, me: Me, results_cache: &mut HashMap<Me, i32>) -> i32 {
-    if let Some(&entry) = results_cache.get(&me) {
-        entry
-    } else {
-        let reachable_keys = maze.get_new_reachable_keys_cache(&me);
-
-        if reachable_keys.len() == 0 {
-            me.steps_taken
-        } else {
-            let res = reachable_keys.iter().map(|(key, extra_steps_needed)| {
-                let mut me = me.clone();
-                me.grab_key(maze, *key, *extra_steps_needed as i32);
-                solve_dp(maze, me, results_cache)
-            }).min().unwrap();
-
-            results_cache.insert(me, res);
-
-            res
-        }
     }
 }
 
@@ -299,11 +238,11 @@ fn solve_dp_2(maze: &mut Maze, mes: Vec<Me>, results_cache: &mut HashMap<Vec<Me>
             move_candidates.iter().map(|&move_candidate_i| {
                 let me = &mes[move_candidate_i];
                 let reachable_keys = maze.get_new_reachable_keys_cache(me);
-                reachable_keys.iter().map(|(key, extra_steps_needed)| {
+                reachable_keys.iter().map(|&relative_key| {
                     let mut mes = mes.clone();
-                    mes[move_candidate_i].grab_key(maze, *key, *extra_steps_needed as i32);
+                    mes[move_candidate_i].grab_key(maze, relative_key);
                     for me in &mut mes {
-                        me.add_key(*key);
+                        me.add_key(relative_key.key);
                     }
 
                     solve_dp_2(maze, mes, results_cache)
@@ -317,10 +256,56 @@ fn solve_dp_2(maze: &mut Maze, mes: Vec<Me>, results_cache: &mut HashMap<Vec<Me>
     }
 }
 
+fn solve_dp_bfs(maze: &mut Maze, mes: Vec<Me>, results_cache: &mut HashMap<Vec<Me>, i32>) -> i32 {
+    let mut heap = BinaryHeap::with_capacity(10000);
+    let mut seen_states = HashSet::new();
+
+    heap.push(Reverse((0, mes)));
+    let mut i = 0;
+
+    while !heap.is_empty() {
+        i += 1;
+        if i >= 1000 {
+            print!("\r{}               ", heap.len());
+            i = 0;
+        }
+
+        let Reverse((_, mes)) = heap.pop().unwrap();
+
+        let move_candidates: Vec<_> = mes.iter().positions(|me| maze.get_new_reachable_keys_cache(me).len() > 0).collect();
+
+        if move_candidates.len() == 0 {
+            return mes.iter().map(|me| me.steps_taken).sum()
+        } else {
+            move_candidates.iter().for_each(|&move_candidate_i| {
+                let me = &mes[move_candidate_i];
+                let reachable_keys = maze.get_new_reachable_keys_cache(me);
+                reachable_keys.iter().for_each(|&relative_key| {
+                    let mut mes = mes.clone();
+                    mes[move_candidate_i].grab_key(maze, relative_key);
+                    for me in &mut mes {
+                        me.add_key(relative_key.key);
+                    }
+
+                    let total_steps = mes.iter().map(|me| me.steps_taken).sum();
+
+                    let heap_elem = Reverse((total_steps, mes));
+
+                    if !seen_states.contains(&heap_elem) {
+                        seen_states.insert(heap_elem.clone());
+                        heap.push(heap_elem);
+                    }
+                })
+            })
+        }
+    }
+
+    panic!();
+}
+
 fn main2() {
 //    let input = read_to_string("input_2_test1.txt").unwrap();
     let input = read_to_string("input.txt").unwrap();
-    println!("{}", input);
 
     let mut maze = Maze::new(input);
 
@@ -332,7 +317,8 @@ fn main2() {
         keys: key_set_new()
     }).collect();
 
-    dbg!(solve_dp_2(&mut maze, mes, &mut HashMap::new()));
+//    dbg!(solve_dp_2(&mut maze, mes, &mut HashMap::new()));
+    dbg!(solve_dp_bfs(&mut maze, mes, &mut HashMap::new()));
 
     // 460 too low?
     // 1996
@@ -348,7 +334,6 @@ fn main1() {
 
     let mut maze = Maze::new(input);
 
-    println!("{:?}", maze);
     println!("{:?}", maze.get_keys());
 
     let me = Me {
@@ -359,12 +344,20 @@ fn main1() {
 
     println!("Reachable: {:?}", maze.get_new_reachable_keys(&me));
 
-    println!("{}", solve_dp(&mut maze, me, &mut HashMap::new()));
+//    println!("{}", solve_dp_2(&mut maze, vec![me], &mut HashMap::new()));
+    println!("{}", solve_dp_bfs(&mut maze, vec![me], &mut HashMap::new()));
 
     // 5964 done
 }
 
 fn main() {
+    let start = Instant::now();
     main1();
+    let duration = start.elapsed();
+    println!("Time elapsed in part 1 is: {:?}", duration);
+
+    let start = Instant::now();
     main2();
+    let duration = start.elapsed();
+    println!("Time elapsed in part 2 is: {:?}", duration);
 }
