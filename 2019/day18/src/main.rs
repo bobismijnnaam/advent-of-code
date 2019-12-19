@@ -94,6 +94,7 @@ impl Maze {
     }
 
     fn get_new_reachable_keys_cache(&mut self, me: &Me) -> Vec<RelativeKey> {
+        // Bottleneck
         if let Some(reachable_keys) = self.reachable_keys_cache.get(&(me.position, me.keys)) {
             reachable_keys.clone()
         } else {
@@ -140,7 +141,6 @@ impl Maze {
 
     fn num_steps_to_keys(&self, from: Vector2<i32>, me: &Me) -> Vec<RelativeKey> {
         let mut cost: HashMap<Vector2<i32>, i32> = HashMap::new();
-        let mut parent: HashMap<Vector2<i32>, Vector2<i32>> = HashMap::new();
         let mut frontier: Vec<Vector2<i32>> = vec![from];
 
         cost.insert(from, 0);
@@ -155,30 +155,24 @@ impl Maze {
                 if !self.is_passable(next_pos, me) {
                     if self.is_key(next_pos) {
                         // Add key to cost if cost is lower
-                        if let Some(&old_cost) = cost.get(&next_pos) {
-                            if next_cost < old_cost {
-                                cost.insert(next_pos, next_cost);
+                        cost.entry(next_pos).and_modify(|old_cost| {
+                            if next_cost < *old_cost {
+                                *old_cost = next_cost;
                             }
-                        } else {
-                            cost.insert(next_pos, next_cost);
-                        }
+                        }).or_insert(next_cost);
                     }
                     continue;
                 }
 
-                if let Some(&old_cost) = cost.get(&next_pos) {
-                    // Have visited before
-                    if next_cost < old_cost {
-                        cost.insert(next_pos, next_cost);
-                        parent.insert(next_pos, pos);
+                cost.entry(next_pos).and_modify(|old_cost| {
+                    if next_cost < *old_cost {
+                        *old_cost = next_cost;
                         frontier.push(next_pos);
                     }
-                } else {
-                    // New!
-                    cost.insert(next_pos, next_cost);
-                    parent.insert(next_pos, pos);
+                }).or_insert_with(|| {
                     frontier.push(next_pos);
-                }
+                    next_cost
+                });
             }
         }
 
@@ -268,7 +262,7 @@ fn solve_dp_2(maze: &mut Maze, mes: Vec<Me>, results_cache: &mut HashMap<Vec<Me>
     }
 }
 
-fn solve_dp_bfs(maze: &mut Maze, mes: Vec<Me>, results_cache: &mut HashMap<Vec<Me>, i32>) -> i32 {
+fn solve_dp_bfs(maze: &mut Maze, mes: Vec<Me>) -> i32 {
     let mut heap = BinaryHeap::with_capacity(10000);
     let mut seen_states = HashSet::new();
 
@@ -330,7 +324,7 @@ fn main2() {
     }).collect();
 
 //    dbg!(solve_dp_2(&mut maze, mes, &mut HashMap::new()));
-    dbg!(solve_dp_bfs(&mut maze, mes, &mut HashMap::new()));
+    dbg!(solve_dp_bfs(&mut maze, mes));
 
     // 460 too low?
     // 1996
@@ -357,7 +351,7 @@ fn main1() {
     println!("Reachable: {:?}", maze.get_new_reachable_keys(&me));
 
 //    println!("{}", solve_dp_2(&mut maze, vec![me], &mut HashMap::new()));
-    println!("{}", solve_dp_bfs(&mut maze, vec![me], &mut HashMap::new()));
+    println!("{}", solve_dp_bfs(&mut maze, vec![me]));
 
     // 5964 done
 }
