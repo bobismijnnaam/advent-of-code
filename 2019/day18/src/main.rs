@@ -144,6 +144,8 @@ impl Maze {
     fn num_steps_to_keys(&self, from: Vector2<i32>, me: &Me) -> Vec<RelativeKey> {
         let mut cost: HashMap<Vector2<i32>, i32> = HashMap::new();
         let mut frontier: Vec<Vector2<i32>> = vec![from];
+        frontier.reserve(500);
+        cost.reserve(500);
 
         cost.insert(from, 0);
 
@@ -264,13 +266,13 @@ fn solve_dp_2(maze: &mut Maze, mes: Vec<Me>, results_cache: &mut HashMap<Vec<Me>
 }
 
 fn solve_dp_bfs(maze: &mut Maze, mes: Vec<Me>) -> i32 {
-    let mut heap = BinaryHeap::with_capacity(10000);
-    let mut seen_states = HashSet::new();
+    let mut heap = BinaryHeap::with_capacity(500000);
+    let mut seen_states = HashSet::with_capacity(500000);
 
     heap.push(Reverse((0, mes)));
     let mut i = 0;
 
-    while !heap.is_empty() {
+    loop {
         i += 1;
         if i >= 1000 {
             print!("\r{}               ", heap.len());
@@ -298,16 +300,13 @@ fn solve_dp_bfs(maze: &mut Maze, mes: Vec<Me>) -> i32 {
 
                     let heap_elem = Reverse((total_steps, mes));
 
-                    if !seen_states.contains(&heap_elem) {
-                        seen_states.insert(heap_elem.clone());
-                        heap.push(heap_elem);
+                    if seen_states.insert(heap_elem.clone()) {
+                        heap.push(heap_elem.clone());
                     }
                 })
             })
         }
     }
-
-    panic!();
 }
 
 fn main2() {
