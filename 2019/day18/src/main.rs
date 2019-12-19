@@ -12,6 +12,7 @@ use std::time::Instant;
 struct Maze {
     grid: Vec<Vec<char>>,
     reachable_keys_cache: HashMap<(Vector2<i32>, KeySet), Vec<RelativeKey>>,
+    key_positions: [Option<Vector2<i32>>; 26],
 }
 
 type KeySet = [bool; 26];
@@ -37,10 +38,17 @@ impl RelativeKey {
 
 impl Maze {
     fn new(input: String) -> Maze {
-        Maze {
+        let mut res = Maze {
             grid: input.trim().split('\n').map(|row| row.chars().collect()).collect(),
             reachable_keys_cache: HashMap::new(),
+            key_positions: [None; 26],
+        };
+
+        for key in 0..26 {
+            res.key_positions[key] = res.get_pos_of(('a' as u8 + key as u8) as char);
         }
+
+        res
     }
 
     fn get(&self, pos: Vector2<i32>) -> char {
@@ -77,7 +85,7 @@ impl Maze {
     fn get_keys(&self) -> Vec<char> {
         (0..26)
             .map(|c| ('a' as u8 + c as u8) as char)
-            .filter(|c| self.get_pos_of(*c).is_some())
+            .filter(|c| self.get_pos_of_key(*c).is_some())
             .collect()
     }
 
@@ -107,6 +115,10 @@ impl Maze {
         }
 
         None
+    }
+
+    fn get_pos_of_key(&self, target: char) -> Option<Vector2<i32>> {
+        self.key_positions[(target as u8 - 'a' as u8) as usize]
     }
 
     fn get_positions_of_raw(&self, target: char) -> Vec<Vector2<i32>> {
@@ -173,7 +185,7 @@ impl Maze {
         self.get_keys().iter()
             .filter(|&&key| !me.has_key(key))
             .filter_map(|&key| {
-                let pos = self.get_pos_of_raw(key);
+                let pos = self.get_pos_of_key(key).unwrap();
                 if let Some(cost) = cost.get(&pos) {
                     Some(RelativeKey::new(key, *cost as usize))
                 } else {
@@ -211,7 +223,7 @@ impl Ord for Me {
 impl Me {
     fn grab_key(&mut self, maze: &Maze, relative_key: RelativeKey) {
         assert!(relative_key.key.is_ascii_lowercase());
-        let key_pos = maze.get_pos_of_raw(relative_key.key);
+        let key_pos = maze.get_pos_of_key(relative_key.key).unwrap();
         self.position = key_pos;
         self.add_key(relative_key.key);
         self.steps_taken += relative_key.distance as i32;
@@ -356,8 +368,10 @@ fn main() {
     let duration = start.elapsed();
     println!("Time elapsed in part 1 is: {:?}", duration);
 
-    let start = Instant::now();
-    main2();
-    let duration = start.elapsed();
-    println!("Time elapsed in part 2 is: {:?}", duration);
+    if false {
+        let start = Instant::now();
+        main2();
+        let duration = start.elapsed();
+        println!("Time elapsed in part 2 is: {:?}", duration);
+    }
 }
