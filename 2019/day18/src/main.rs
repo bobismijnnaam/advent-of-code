@@ -25,13 +25,15 @@ fn key_set_new() -> KeySet {
 struct RelativeKey {
     key: char,
     distance: usize,
+    position: Vector2<i32>,
 }
 
 impl RelativeKey {
-    fn new(key: char, distance: usize) -> RelativeKey {
+    fn new(key: char, distance: usize, position: Vector2<i32>) -> RelativeKey {
         RelativeKey {
             key,
-            distance
+            distance,
+            position
         }
     }
 }
@@ -94,7 +96,7 @@ impl Maze {
     }
 
     fn get_new_reachable_keys_cache(&mut self, me: &Me) -> Vec<RelativeKey> {
-        // Bottleneck
+        // Bottleneck? Also allocation
         if let Some(reachable_keys) = self.reachable_keys_cache.get(&(me.position, me.keys)) {
             reachable_keys.clone()
         } else {
@@ -181,7 +183,7 @@ impl Maze {
             .filter_map(|&key| {
                 let pos = self.get_pos_of_key(key).unwrap();
                 if let Some(cost) = cost.get(&pos) {
-                    Some(RelativeKey::new(key, *cost as usize))
+                    Some(RelativeKey::new(key, *cost as usize, pos))
                 } else {
                     None
                 }
@@ -215,10 +217,9 @@ impl Ord for Me {
 }
 
 impl Me {
-    fn grab_key(&mut self, maze: &Maze, relative_key: RelativeKey) {
+    fn grab_key(&mut self, relative_key: RelativeKey) {
         assert!(relative_key.key.is_ascii_lowercase());
-        let key_pos = maze.get_pos_of_key(relative_key.key).unwrap();
-        self.position = key_pos;
+        self.position = relative_key.position;
         self.add_key(relative_key.key);
         self.steps_taken += relative_key.distance as i32;
     }
@@ -246,7 +247,7 @@ fn solve_dp_2(maze: &mut Maze, mes: Vec<Me>, results_cache: &mut HashMap<Vec<Me>
                 let reachable_keys = maze.get_new_reachable_keys_cache(me);
                 reachable_keys.iter().map(|&relative_key| {
                     let mut mes = mes.clone();
-                    mes[move_candidate_i].grab_key(maze, relative_key);
+                    mes[move_candidate_i].grab_key(relative_key);
                     for me in &mut mes {
                         me.add_key(relative_key.key);
                     }
@@ -288,7 +289,7 @@ fn solve_dp_bfs(maze: &mut Maze, mes: Vec<Me>) -> i32 {
                 let reachable_keys = maze.get_new_reachable_keys_cache(me);
                 reachable_keys.iter().for_each(|&relative_key| {
                     let mut mes = mes.clone();
-                    mes[move_candidate_i].grab_key(maze, relative_key);
+                    mes[move_candidate_i].grab_key(relative_key);
                     for me in &mut mes {
                         me.add_key(relative_key.key);
                     }
