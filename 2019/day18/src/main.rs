@@ -18,6 +18,20 @@ fn key_set_new() -> KeySet {
     [false; 26]
 }
 
+struct RelativeKey {
+    key: char,
+    distance: usize,
+}
+
+impl RelativeKey {
+    fn new(key: char, distance: usize) -> RelativeKey {
+        RelativeKey {
+            key,
+            distance
+        }
+    }
+}
+
 impl Maze {
     fn new(input: String) -> Maze {
         Maze {
@@ -45,6 +59,13 @@ impl Maze {
         }
     }
 
+    fn is_key(&self, pos: Vector2<i32>) -> bool {
+        match self.get(pos) {
+            'a' ..= 'z' => true,
+            _ => false
+        }
+    }
+
     fn size(&self) -> Vector2<i32> {
         let field = &self.grid;
         Vector2::new(field[0].len() as i32, field.len() as i32)
@@ -58,16 +79,9 @@ impl Maze {
     }
 
     fn get_new_reachable_keys(&self, me: &Me) -> Vec<(char, usize)> {
-        self.get_keys().iter()
-            .filter(|&&key| !me.has_key(key))
-            .filter_map(|&key| {
-                let key_pos = self.get_pos_of_raw(key);
-                if let Some(cost) = self.num_steps(me.position, key_pos, &me) {
-                    Some((key, cost as usize))
-                } else {
-                    None
-                }
-            })
+        self.num_steps_to_keys(me.position, me)
+            .iter()
+            .map(|relative_key| (relative_key.key, relative_key.distance))
             .collect()
     }
 
@@ -109,6 +123,63 @@ impl Maze {
 
     fn get_pos_of_raw(&self, target: char) -> Vector2<i32> {
         self.get_pos_of(target).unwrap()
+    }
+
+    fn num_steps_to_keys(&self, from: Vector2<i32>, me: &Me) -> Vec<RelativeKey> {
+        let mut cost: HashMap<Vector2<i32>, i32> = HashMap::new();
+        let mut parent: HashMap<Vector2<i32>, Vector2<i32>> = HashMap::new();
+        let mut frontier: Vec<Vector2<i32>> = vec![from];
+
+        cost.insert(from, 0);
+
+        while frontier.len() > 0 {
+            let pos = frontier.pop().unwrap();
+            let &pos_cost = cost.get(&pos).unwrap();
+            for dir in &[North, East, South, West] { // TODO: Refactor to .neighbours
+                let next_pos = pos + dir.to_vec();
+                let next_cost = pos_cost + 1;
+
+                if !self.is_passable(next_pos, me) {
+                    if self.is_key(next_pos) {
+                        // Add key to cost if cost is lower
+                        if let Some(&old_cost) = cost.get(&next_pos) {
+                            if next_cost < old_cost {
+                                cost.insert(next_pos, next_cost);
+                            }
+                        } else {
+                            cost.insert(next_pos, next_cost);
+                        }
+                    }
+                    continue;
+                }
+
+                if let Some(&old_cost) = cost.get(&next_pos) {
+                    // Have visited before
+                    if next_cost < old_cost {
+                        cost.insert(next_pos, next_cost);
+                        parent.insert(next_pos, pos);
+                        frontier.push(next_pos);
+                    }
+                } else {
+                    // New!
+                    cost.insert(next_pos, next_cost);
+                    parent.insert(next_pos, pos);
+                    frontier.push(next_pos);
+                }
+            }
+        }
+
+        self.get_keys().iter()
+            .filter(|&&key| !me.has_key(key))
+            .filter_map(|&key| {
+                let pos = self.get_pos_of_raw(key);
+                if let Some(cost) = cost.get(&pos) {
+                    Some(RelativeKey::new(key, *cost as usize))
+                } else {
+                    None
+                }
+            })
+            .collect()
     }
 
     fn num_steps(&self, from: Vector2<i32>, to: Vector2<i32>, me: &Me) -> Option<i32> {
