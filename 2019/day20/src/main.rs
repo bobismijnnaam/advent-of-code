@@ -4,7 +4,6 @@ use std::collections::{HashMap, BinaryHeap};
 
 mod util;
 use util::direction::Direction::*;
-use itertools::Itertools;
 use std::cmp::{Reverse, Ordering};
 use std::time::Instant;
 
@@ -16,25 +15,25 @@ struct Maze {
 type PortalID = (char, char);
 struct Portal {
     id: PortalID,
-    from: MazePosition,
-    to: MazePosition,
+    from: Location,
+    to: Location,
 }
 
 #[derive(Eq, PartialEq, Hash, Debug, PartialOrd, Copy, Clone)]
-struct MazePosition {
+struct Location {
     pos: Vector2<i32>,
     depth: i32,
 }
 
-impl MazePosition {
-    fn new(pos: Vector2<i32>, depth: i32) -> MazePosition {
-        MazePosition {
+impl Location {
+    fn new(pos: Vector2<i32>, depth: i32) -> Location {
+        Location {
             pos, depth
         }
     }
 }
 
-impl Ord for MazePosition {
+impl Ord for Location {
     fn cmp(&self, other: &Self) -> Ordering {
         self.pos.x.cmp(&other.pos.x)
             .then(self.pos.y.cmp(&other.pos.y))
@@ -44,34 +43,20 @@ impl Ord for MazePosition {
 
 impl Maze {
     fn new(input: String) -> Maze {
-        let mut res = Maze {
+        Maze {
             grid: input
                 .split('\n')
                 .filter(|row| row.len() > 1)
                 .map(|row| row.chars().collect())
                 .collect(),
-        };
-
-        res
-    }
-
-    fn is_portal(&self, pos: MazePosition) -> bool {
-        for dir in &[North, East, South, West] {
-            let neighbour_pos = pos.pos + dir.to_vec();
-            let c = self.get(neighbour_pos);
-            if c.is_ascii_uppercase() {
-                if self.is_external_portal(pos.pos) {
-                    return pos.depth > 0;
-                } else {
-                    return true;
-                }
-            }
         }
-
-        return false;
     }
 
     fn get_portal_id(&self, pos: Vector2<i32>) -> Option<PortalID> {
+        if self.get(pos) != '.' {
+            return None;
+        }
+
         for dir in &[North, East, South, West] {
             let c1 = self.get(pos + dir.to_vec());
             if c1.is_ascii_uppercase() {
@@ -93,13 +78,7 @@ impl Maze {
             for x in 1..self.size().x - 1 {
                 let portal_pos = Vector2::new(x, y);
 
-                if self.get(portal_pos) != '.' {
-                    continue;
-                }
-
-                if self.is_portal(MazePosition::new(portal_pos, 1)) {
-                    let other_id = self.get_portal_id(portal_pos).unwrap();
-
+                if let Some(other_id) = self.get_portal_id(portal_pos) {
                     if id == other_id && other_pos.is_some() {
                         return [other_pos.unwrap(), portal_pos]
                     } else if id == other_id {
@@ -129,11 +108,12 @@ impl Maze {
         !self.is_internal_portal(pos)
     }
 
-    fn get_portal_from_pos(&self, pos: MazePosition) -> Option<Portal> {
+    fn get_portal_from_pos(&self, pos: Location) -> Option<Portal> {
         let id = self.get_portal_id(pos.pos)?;
 
         let portal_positions = self.get_portal_positions_raw(id);
 
+        // Cannot be start or end portal
         if portal_positions[0] == portal_positions[1] {
             return None;
         }
@@ -151,13 +131,12 @@ impl Maze {
         };
 
         if next_depth < 0 {
-            println!("Cannot use portal {:?} at depth {}", id, pos.depth);
             None
         } else {
             Some(Portal {
                 id: id,
                 from: pos,
-                to: MazePosition {
+                to: Location {
                     pos: other_pos,
                     depth: next_depth,
                 }
@@ -221,41 +200,11 @@ impl Maze {
         Vector2::new(field[0].len() as i32, field.len() as i32)
     }
 
-    fn get_pos_of(&self, target: char) -> Option<Vector2<i32>> {
-        let size = self.size();
-        for y in 0..size.y {
-            for x in 0..size.x {
-                if self.get(Vector2::new(x, y)) == target {
-                    return Some(Vector2::new(x, y));
-                }
-            }
-        }
-
-        None
-    }
-
-    fn get_positions_of_raw(&self, target: char) -> Vec<Vector2<i32>> {
-        let size = self.size();
-        (0..size.x)
-            .cartesian_product(0..size.y)
-            .map(|(x, y)| Vector2::new(x, y))
-            .filter_map(|pos| if self.get(pos) == target {
-                Some(pos)
-            } else {
-                None
-            })
-            .collect()
-    }
-
-    fn get_pos_of_raw(&self, target: char) -> Vector2<i32> {
-        self.get_pos_of(target).unwrap()
-    }
-
-    fn num_steps(&self, from: MazePosition, to: MazePosition) -> i32 {
+    fn num_steps(&self, from: Location, to: Location) -> i32 {
         assert!(self.is_passable(from.pos) && self.is_passable(to.pos));
 
-        let mut cost: HashMap<MazePosition, i32> = HashMap::new();
-        let mut frontier: BinaryHeap<Reverse<(i32, MazePosition)>> = BinaryHeap::from(vec![Reverse((0, from))]);
+        let mut cost: HashMap<Location, i32> = HashMap::new();
+        let mut frontier: BinaryHeap<Reverse<(i32, Location)>> = BinaryHeap::from(vec![Reverse((0, from))]);
         frontier.reserve(500);
         cost.reserve(500);
 
@@ -269,7 +218,7 @@ impl Maze {
             }
 
             for dir in &[North, East, South, West] {
-                let next_pos = MazePosition::new(pos.pos + dir.to_vec(), pos.depth);
+                let next_pos = Location::new(pos.pos + dir.to_vec(), pos.depth);
                 let next_cost = pos_cost + 1;
 
                 if self.is_passable(next_pos.pos) {
@@ -315,8 +264,8 @@ fn main1() {
     dbg!(end_portal);
 
     let res = maze.num_steps(
-        MazePosition::new(start_portal, 0),
-        MazePosition::new(end_portal, 0)
+        Location::new(start_portal, 0),
+        Location::new(end_portal, 0)
     );
 
     if res == 500 || res == 501 {
