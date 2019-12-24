@@ -8,6 +8,7 @@ use std::hash::{Hash, Hasher};
 use itertools::Itertools;
 use std::cmp::Ordering;
 use std::iter::once;
+use std::time::{Instant, Duration};
 
 #[derive(Debug, Eq, PartialEq, Clone, Copy, Hash, PartialOrd)]
 struct Location {
@@ -27,75 +28,75 @@ impl Location {
         self.position == Vector2::new(size.x / 2, size.y / 2)
     }
 
-    fn side_left(size: Vector2<i32>, depth: i32) -> Vec<Location> {
+    fn side_left_it(size: Vector2<i32>, depth: i32) -> impl Iterator<Item = Location> {
         (0..size.y)
-            .map(|y| Location::new(depth, Vector2::new(0, y)))
-            .collect()
+            .map(move |y| Location::new(depth, Vector2::new(0, y)))
     }
 
-    fn side_right(size: Vector2<i32>, depth: i32) -> Vec<Location> {
+    fn side_right_it(size: Vector2<i32>, depth: i32) -> impl Iterator<Item = Location> {
         (0..size.y)
-            .map(|y| Location::new(depth, Vector2::new(size.x - 1, y)))
-            .collect()
+            .map(move |y| Location::new(depth, Vector2::new(size.x - 1, y)))
     }
 
-    fn side_top(size: Vector2<i32>, depth: i32) -> Vec<Location> {
+    fn side_top_it(size: Vector2<i32>, depth: i32) -> impl Iterator<Item = Location> {
         (0..size.x)
-            .map(|x| Location::new(depth, Vector2::new(x, 0)))
-            .collect()
+            .map(move |x| Location::new(depth, Vector2::new(x, 0)))
     }
 
-    fn side_bottom(size: Vector2<i32>, depth: i32) -> Vec<Location> {
+    fn side_bottom_it(size: Vector2<i32>, depth: i32) -> impl Iterator<Item = Location> {
         (0..size.x)
-            .map(|x| Location::new(depth, Vector2::new(x, size.y - 1)))
-            .collect()
+            .map(move |x| Location::new(depth, Vector2::new(x, size.y - 1)))
     }
 
-    fn neighbours(&self, size: Vector2<i32>) -> Vec<Location> {
-        (&[North, East, South, West]).iter()
+    fn neighbours(&self, size: Vector2<i32>) -> Box<dyn Iterator<Item = Location> + '_> {
+        Box::new((&[North, East, South, West]).iter()
             .map(move |dir| Location {
                 depth: self.depth,
                 position: self.position + dir.to_vec()
             })
-            .map(|loc| {
+            .map(move |loc| {
                 if loc.position.x == -1 {
-                    vec![Location {
+                    Location {
                         depth: self.depth - 1,
                         position: Vector2::new(1, 2)
-                    }]
+                    }
                 } else if loc.position.y == -1 {
-                    vec![Location {
+                    Location {
                         depth: self.depth - 1,
                         position: Vector2::new(2, 1)
-                    }]
+                    }
                 } else if loc.position.x == size.x {
-                    vec![Location {
+                    Location {
                         depth: self.depth - 1,
                         position: Vector2::new(3, 2)
-                    }]
+                    }
                 } else if loc.position.y == size.y {
-                    vec![Location {
+                    Location {
                         depth: self.depth - 1,
                         position: Vector2::new(2, 3)
-                    }]
-                } else if loc.is_center(size) {
-                    if self.position.x == 1 {
-                        Location::side_left(size, loc.depth + 1)
-                    } else if self.position.x == 3 {
-                        Location::side_right(size, loc.depth + 1)
-                    } else if self.position.y == 1 {
-                        Location::side_top(size, loc.depth + 1)
-                    } else if self.position.y == 3 {
-                        Location::side_bottom(size, loc.depth + 1)
-                    } else {
-                        panic!()
                     }
                 } else {
-                    vec![loc]
-                }.into_iter()
+                    loc
+                }
             })
-            .flatten()
-            .collect()
+            .map(move |loc| -> Box<dyn Iterator<Item = Location>> {
+                if loc.is_center(size) {
+                    if self.position.x == 1 {
+                        Box::new(Location::side_left_it(size, loc.depth + 1))
+                    } else if self.position.x == 3 {
+                        Box::new(Location::side_right_it(size, loc.depth + 1))
+                    } else if self.position.y == 1 {
+                        Box::new(Location::side_top_it(size, loc.depth + 1))
+                    } else if self.position.y == 3 {
+                        Box::new(Location::side_bottom_it(size, loc.depth + 1))
+                    } else {
+                        unreachable!()
+                    }
+                } else {
+                    Box::new(once(loc))
+                }
+            })
+            .flatten())
     }
 }
 
@@ -147,9 +148,9 @@ impl Field {
     }
 
     fn neighbour_bugs(&self, loc: Location) -> i32 {
-        loc.neighbours(self.size)
-            .iter()
-            .filter(|&&loc| self.has_bug(loc))
+        loc
+            .neighbours(self.size)
+            .filter(|&loc| self.has_bug(loc))
             .count() as i32
     }
 
@@ -229,34 +230,52 @@ impl Field {
     }
 }
 
-fn main() {
-    let input = read_to_string("test1.txt").unwrap();
-
-    let mut field = parse_field(&input);
-
-    println!("Begin:");
-    field.print();
-
-    for i in 0..10 {
-        field = field.next();
-    }
-
-    println!("After 10:");
-    field.print();
-
-
-
-
+fn main1() {
+//    let input = read_to_string("test1.txt").unwrap();
+//
+//    let mut field = parse_field(&input);
+//
+//    if false {
+//        println!("Begin:");
+//        field.print();
+//    }
+//
+//    for _i in 0..10 {
+//        field = field.next();
+//    }
+//
+//    if false {
+//        println!("After 10:");
+//        field.print();
+//    }
 
     let input = read_to_string("input.txt").unwrap();
 
     let mut field = parse_field(&input);
 
-    for i in 0..200 {
+    for _i in 0..200 {
         field = field.next()
     }
 
     println!();
 
     dbg!(field.num_bugs());
+}
+
+fn main() {
+    for _i in 0..100 {
+        main1();
+    }
+
+    let mut total: Duration = Duration::from_millis(0);
+
+    for _i in 0..100 {
+        let start = Instant::now();
+        main1();
+        let end = Instant::now();
+        total += end - start;
+        println!("Took: {}ms", (end - start).as_millis());
+    }
+
+    println!("Average: {}", total.as_millis() / 100);
 }
