@@ -28,32 +28,13 @@ impl Location {
         self.position == Vector2::new(size.x / 2, size.y / 2)
     }
 
-    fn side_left_it(size: Vector2<i32>, depth: i32) -> impl Iterator<Item = Location> {
-        (0..size.y)
-            .map(move |y| Location::new(depth, Vector2::new(0, y)))
-    }
-
-    fn side_right_it(size: Vector2<i32>, depth: i32) -> impl Iterator<Item = Location> {
-        (0..size.y)
-            .map(move |y| Location::new(depth, Vector2::new(size.x - 1, y)))
-    }
-
-    fn side_top_it(size: Vector2<i32>, depth: i32) -> impl Iterator<Item = Location> {
-        (0..size.x)
-            .map(move |x| Location::new(depth, Vector2::new(x, 0)))
-    }
-
-    fn side_bottom_it(size: Vector2<i32>, depth: i32) -> impl Iterator<Item = Location> {
-        (0..size.x)
-            .map(move |x| Location::new(depth, Vector2::new(x, size.y - 1)))
-    }
-
     fn neighbours(&self, size: Vector2<i32>) -> Box<dyn Iterator<Item = Location> + '_> {
         Box::new((&[North, East, South, West]).iter()
             .map(move |dir| Location {
                 depth: self.depth,
                 position: self.position + dir.to_vec()
             })
+            // Handle going up
             .map(move |loc| {
                 if loc.position.x == -1 {
                     Location {
@@ -79,19 +60,33 @@ impl Location {
                     loc
                 }
             })
+            // Handle going down
             .map(move |loc| -> Box<dyn Iterator<Item = Location>> {
+                let depth = self.depth;
                 if loc.is_center(size) {
-                    if self.position.x == 1 {
-                        Box::new(Location::side_left_it(size, loc.depth + 1))
+                    (if self.position.x == 1 {
+                        Box::new(
+                        (0..size.y)
+                            .map(move |y| Location::new(depth + 1, Vector2::new(0, y)))
+                        )
                     } else if self.position.x == 3 {
-                        Box::new(Location::side_right_it(size, loc.depth + 1))
+                        Box::new(
+                        (0..size.y)
+                            .map(move |y| Location::new(depth + 1, Vector2::new(size.x - 1, y)))
+                        )
                     } else if self.position.y == 1 {
-                        Box::new(Location::side_top_it(size, loc.depth + 1))
+                        Box::new(
+                        (0..size.x)
+                            .map(move |x| Location::new(depth + 1, Vector2::new(x, 0)))
+                        )
                     } else if self.position.y == 3 {
-                        Box::new(Location::side_bottom_it(size, loc.depth + 1))
+                        Box::new(
+                        (0..size.x)
+                            .map(move |x| Location::new(depth + 1, Vector2::new(x, size.y - 1)))
+                        )
                     } else {
                         unreachable!()
-                    }
+                    })
                 } else {
                     Box::new(once(loc))
                 }
@@ -230,27 +225,7 @@ impl Field {
     }
 }
 
-fn main1() {
-//    let input = read_to_string("test1.txt").unwrap();
-//
-//    let mut field = parse_field(&input);
-//
-//    if false {
-//        println!("Begin:");
-//        field.print();
-//    }
-//
-//    for _i in 0..10 {
-//        field = field.next();
-//    }
-//
-//    if false {
-//        println!("After 10:");
-//        field.print();
-//    }
-
-    let input = read_to_string("input.txt").unwrap();
-
+fn main1(input: &str) {
     let mut field = parse_field(&input);
 
     for _i in 0..200 {
@@ -263,19 +238,21 @@ fn main1() {
 }
 
 fn main() {
-    for _i in 0..100 {
-        main1();
+    let input = read_to_string("input.txt").unwrap();
+
+    for _i in 0..10 {
+        main1(&input);
     }
 
     let mut total: Duration = Duration::from_millis(0);
 
-    for _i in 0..100 {
+    for _i in 0..10 {
         let start = Instant::now();
-        main1();
+        main1(&input);
         let end = Instant::now();
         total += end - start;
         println!("Took: {}ms", (end - start).as_millis());
     }
 
-    println!("Average: {}", total.as_millis() / 100);
+    println!("Average: {}", total.as_millis() / 10);
 }
