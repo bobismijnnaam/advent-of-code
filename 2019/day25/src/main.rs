@@ -17,6 +17,10 @@ use std::collections::HashMap;
 use petgraph::graphmap::GraphMap;
 use petgraph::Directed;
 use petgraph::algo::astar;
+use itertools::Itertools;
+use crate::util::intcode::Instruction::Output;
+use petgraph::dot::{Dot, Config};
+use std::net::Shutdown::Write;
 
 impl Command {
     fn take(item: &str) -> Command {
@@ -49,7 +53,7 @@ struct Droid {
 impl Droid {
     fn new() -> Droid {
         let mut cpu = IntcodeCPU::new(program_from_file("input.txt"));
-//        cpu.output_mode = OutputMode::ASCII;
+        cpu.output_mode = OutputMode::ASCII;
 
         cpu.start();
 
@@ -79,6 +83,10 @@ impl Droid {
     }
 
     fn resume_command(&mut self, c: Command) -> String {
+        if self.cpu.output_mode == OutputMode::ASCII {
+            println!("{}", c.to_string());
+        }
+
         self.cpu.resume_string(&format!("{}\n", c.to_string()));
 
         let output: String = self.cpu.output.iter()
@@ -241,16 +249,22 @@ impl Map {
     }
 
     fn add_neighbour(&mut self, location: &str, dir: Direction, neighbour: &str) {
-        let location = self.add_node(location);
-        let neighbour = self.add_node(neighbour);
-
-        self.g.add_edge(location, neighbour, dir);
-        self.g.add_edge(neighbour, location, dir.mirror());
+        self.add_edge(location, dir, neighbour);
+        self.add_edge(neighbour, dir.mirror(), location);
     }
 
     fn add_neighbours(&mut self, location: &str, neighbours: &HashMap<Direction, String>) {
         for (dir, neighbour) in neighbours {
             self.add_neighbour(location, *dir, neighbour);
+        }
+    }
+
+    fn add_edge(&mut self, location: &str, dir: Direction, neighbour: &str) {
+        let location = self.add_node(location);
+        let neighbour = self.add_node(neighbour);
+
+        if !self.g.contains_edge(location, neighbour) {
+            self.g.add_edge(location, neighbour, dir);
         }
     }
 
@@ -372,10 +386,42 @@ fn main() {
     println!("Brute forcing way through the pressure pad");
 
     let path = map.find_path(&d.location, "Security Checkpoint");
-    let status = d.follow_path(path).pop().unwrap();
+    d.follow_path(path);
 
-//    let neighbours = d.get_neighbour_locations();
-//    map.add_neighbours(&d.status.location, &neighbours);
-//
-//    dbg!(map.find_path(&neighbours[&North], &neighbours[&South]));
+    let items = d.inventory();
+
+    for item in &items {
+        d.resume_command(Drop(item.clone()));
+    }
+
+    let mut made_it_through = false;
+    for k in 0..items.len() {
+        for items in items.iter().combinations(k) {
+            println!("Pick up {:?}", items);
+            for &item in &items {
+                d.resume_command(Take(item.clone()));
+            }
+
+            println!("Go to pressure pad");
+            let statuses = d.go_direction(East);
+            if !statuses.iter().any(|status| status.is_ejected_back()) {
+                made_it_through = true;
+                break;
+            }
+
+            println!("Dropping items...");
+            for &item in &items {
+                d.resume_command(Drop(item.clone()));
+            }
+        }
+
+        if made_it_through {
+            break;
+        }
+    }
+
+    let dot = Dot::with_config(&map.g, &[]);
+    println!("{:?}", dot);
+
+    std::fs::write("graph.dot", format!("{}", dot));
 }

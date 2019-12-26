@@ -1,5 +1,6 @@
 use nalgebra::Vector2;
 use std::convert::TryFrom;
+use std::fmt::{Display, Formatter, Error};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum Direction {
@@ -80,5 +81,11 @@ impl TryFrom<&str> for Direction {
             "west" => Ok(West),
             _ => Err(()),
         }
+    }
+}
+
+impl Display for Direction {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
+        write!(f, "{}", self.to_string())
     }
 }
