@@ -6,6 +6,7 @@ import sys
 import os
 
 day = datetime.datetime.now().day
+day = 25
 
 print("Puzzle", day)
 
