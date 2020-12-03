@@ -14,6 +14,47 @@ def search : ℕ → list ℕ → list (ℕ × ℕ)
 | needle (n :: ns) := search_helper needle n ns ++ search needle ns
 | _ [] := []
 
+def search_spec : ℕ → set ℕ → set (ℕ × ℕ)
+| needle ns := {ab | prod.fst ab ∈ ns ∧ prod.snd ab ∈ ns ∧ prod.fst ab + prod.snd ab = needle }
+
+lemma search_search_spec (needle : ℕ) (ns : list ℕ) :
+    set_of (λn, list.mem n (search needle ns)) = search_spec needle (set_of $ (λns n, list.mem n ns) ns) :=
+begin
+    induction' ns,
+    case nil {
+        ext1 ab,
+        apply iff.intro,
+        { 
+            intro hab,
+            tauto
+        },
+        {
+            intro hab,
+            cases' hab,
+            tauto
+        },
+    },
+    case cons {
+        ext1 ab,
+        apply iff.intro,
+        { 
+            intro hab,
+            apply and.intro,
+            {
+                
+            },
+            apply and.intro,
+            {
+                sorry
+            },
+            { sorry }
+            
+
+        },
+        { sorry }
+    }
+end
+
 def search_helper_helper₂ : ℕ → ℕ → ℕ → list ℕ → list (ℕ × ℕ × ℕ)
 | needle a b (c :: cs) :=
     if a + b + c = needle
