@@ -16,43 +16,45 @@ def guessPattern(pattern):
     else:
         return None
 
-def guessSingleMapping(pattern):
-    if len(pattern) == 2: # 1
-        return "cf"
-    elif len(pattern) == 4: # 4
-        return "bdcf"
-    elif len(pattern) == 3: # 7
-        return "dab"
-    else:
-        return None
-
-def guessMappingWithPermute(pattern):
-    guess = guessSingleMapping(pattern)
-    if guess:
-        allMaps = itertools.permutations(guess)
-        return set(dict(zip(pat, aMap)) for aMap in allMaps)
-    else:
-        return set()
-
 def allMappings():
     identityMapping = "abcdefg"
     return [dict(zip(candidateMap, identityMapping)) for candidateMap in itertools.permutations(identityMapping)]
 
 def applyMapping(pat, aMap):
-    return int("".join(aMap[c] for c in pat))
+    return sevenSegToInt("".join(aMap[c] for c in pat))
 
 def decodeJob(job):
     (examples, outputs) = job
     for aMap in allMappings():
         decoding = set(applyMapping(pat, aMap) for pat in examples)
-        if len(decoding) == 10:
-            return int("".join(applyMapping(pat) for pat in outputs))
+        if len(decoding) == 10 and not None in decoding:
+            return int("".join(str(applyMapping(pat, aMap)) for pat in outputs))
 
 def sevenSegToInt(pat):
-    if set(pat) == set("
+    if set(pat) == set("abcefg"):
+        return 0
+    if set(pat) == set("cf"):
+        return 1
+    if set(pat) == set("acdeg"):
+        return 2
+    if set(pat) == set("acdfg"):
+        return 3
+    if set(pat) == set("bdcf"):
+        return 4
+    if set(pat) == set("abdfg"):
+        return 5
+    if set(pat) == set("abdefg"):
+        return 6
+    if set(pat) == set("acf"):
+        return 7
+    if set(pat) == set("abcdefg"):
+        return 8
+    if set(pat) == set("abcdfg"):
+        return 9
+    return None
 
 def main():
-    with open("test.txt") as f:
+    with open("input.txt") as f:
         job = [parseLine(line) for line in f.readlines()]
 
     print(job)
@@ -82,8 +84,12 @@ def main():
     print(len(allMappings()))
 
     jobs = job
+    total = 0
     for job in jobs:
-        print(decodeJob(job))
+        v = decodeJob(job)
+        print(v)
+        total += v
+    print(total)
 
 if __name__ == "__main__":
     main()
